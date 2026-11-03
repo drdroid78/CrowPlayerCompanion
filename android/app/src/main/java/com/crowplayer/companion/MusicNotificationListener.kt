@@ -17,7 +17,7 @@ class MusicNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile var activeController: MediaController? = null
             private set
-        private val commandExecutor = Executors.newFixedThreadPool(2)
+        private val commandExecutor = Executors.newSingleThreadExecutor()
         private val optimisticLikes = mutableMapOf<String, Boolean>()
 
         fun playPause() {
@@ -57,6 +57,7 @@ class MusicNotificationListener : NotificationListenerService() {
                 val currentLiked = optimisticLikes[trackKey] ?: reportedLiked
                 nextLiked = !currentLiked
                 optimisticLikes[trackKey] = nextLiked
+                PlayerSnapshot.isLiked = nextLiked
             }
 
             commandExecutor.execute {
@@ -138,6 +139,9 @@ class MusicNotificationListener : NotificationListenerService() {
             else -> "paused"
         }
         PlayerSnapshot.artwork = artwork
+        val trackKey = "${controller.packageName.orEmpty()}|" + (metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.takeIf { it.isNotBlank() } ?: "$title|$artist")
+        val reportedLiked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true
+        PlayerSnapshot.isLiked = synchronized(optimisticLikes) { optimisticLikes[trackKey] ?: reportedLiked }
         PlayerSnapshot.positionMs = (controller.playbackState?.position ?: 0L).coerceAtLeast(0L)
         PlayerSnapshot.durationMs = (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L).coerceAtLeast(0L)
         PlayerSnapshot.lastUpdated = System.currentTimeMillis()
