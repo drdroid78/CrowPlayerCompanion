@@ -8,8 +8,8 @@
 
     <application
         android:allowBackup="false"
-        android:label="CrowPlayer Companion"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:label="CrowPlayer Škoda"
+        android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
