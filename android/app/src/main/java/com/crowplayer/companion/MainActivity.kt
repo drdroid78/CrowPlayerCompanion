@@ -29,6 +29,8 @@ import android.widget.TextView
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var trackTitle: TextView
+    private lateinit var likeButton: TextView
+    private var likeRequestPending = false
     private lateinit var artist: TextView
     private lateinit var playback: TextView
     private lateinit var source: TextView
@@ -110,9 +112,28 @@ class MainActivity : Activity() {
         playerCard.addView(artFrame, LinearLayout.LayoutParams(dp(196), dp(196)).apply { bottomMargin = dp(14) })
 
         playerCard.addView(label("NOW PLAYING", 10f, emerald, true))
-        trackTitle = label("Нет данных о треке", 22f, Color.WHITE, true)
-        trackTitle.maxLines = 2
-        playerCard.addView(trackTitle, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        trackTitle = label("Нет данных о треке", 22f, Color.WHITE, true, Gravity.START).apply { maxLines = 2 }
+        titleRow.addView(trackTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        likeButton = TextView(this).apply {
+            text = "♡"; textSize = 34f; gravity = Gravity.CENTER
+            setTextColor(muted); isClickable = true; isFocusable = true
+            background = rounded(Color.TRANSPARENT, 24f)
+            contentDescription = "Добавить трек в избранное"
+            setOnClickListener {
+                if (likeRequestPending) return@setOnClickListener
+                likeRequestPending = true
+                isEnabled = false
+                MusicNotificationListener.toggleLike { ok ->
+                    likeRequestPending = false
+                    likeButton.isEnabled = true
+                    if (!ok) status.text = "НЕ УДАЛОСЬ ОТПРАВИТЬ ЛАЙК"
+                    renderSnapshot()
+                }
+            }
+        }
+        titleRow.addView(likeButton, LinearLayout.LayoutParams(dp(52), dp(52)))
+        playerCard.addView(titleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         artist = label("Запусти Яндекс Музыку", 15f, muted)
         playerCard.addView(artist, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
 
@@ -144,12 +165,6 @@ class MainActivity : Activity() {
             })
         }
         playerCard.addView(trackSeekBar, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(4) })
-        playerCard.addView(actionButton("♡  ЛАЙК / УБРАТЬ ИЗ ИЗБРАННОГО", false) {
-            status.text = "ОТПРАВКА КОМАНДЫ…"
-            MusicNotificationListener.toggleLike { ok ->
-                status.text = if (ok) "КОМАНДА ОТПРАВЛЕНА" else "НЕ УДАЛОСЬ ОТПРАВИТЬ КОМАНДУ"
-            }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
         content.addView(playerCard, LinearLayout.LayoutParams(-1, -2))
 
         val linkCard = LinearLayout(this).apply {
@@ -296,6 +311,9 @@ class MainActivity : Activity() {
         val hasSession = PlayerSnapshot.lastUpdated > 0L && (PlayerSnapshot.packageName.isNotBlank() || PlayerSnapshot.playback == "Нет доступа к медиасессиям")
         status.text = if (hasSession) "МЕДИАСЕССИЯ ОБНАРУЖЕНА" else "МЕДИАСЕССИЯ НЕ НАЙДЕНА"
         trackTitle.text = PlayerSnapshot.title
+        likeButton.text = if (PlayerSnapshot.isLiked) "♥" else "♡"
+        likeButton.setTextColor(if (PlayerSnapshot.isLiked) Color.rgb(255, 77, 109) else muted)
+        likeButton.contentDescription = if (PlayerSnapshot.isLiked) "Убрать из избранного" else "Добавить в избранное"
         artist.text = if (PlayerSnapshot.album.isNotBlank()) "${PlayerSnapshot.artist}  ·  ${PlayerSnapshot.album}" else PlayerSnapshot.artist
         val playing = PlayerSnapshot.playback.equals("playing", true)
         playback.text = if (playing) "●  ВОСПРОИЗВЕДЕНИЕ" else "Ⅱ  ПАУЗА"
