@@ -12,7 +12,7 @@ on:
       - ".github/workflows/build-companion.yml"
 
 concurrency:
-  group: crowplayer-android-build
+  group: crowplayer-android-build-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
