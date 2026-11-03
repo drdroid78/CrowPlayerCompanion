@@ -116,6 +116,24 @@ class MainActivity : Activity() {
         playback = label("ОЖИДАНИЕ", 10f, emerald, true)
         playbackRow.addView(playback, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
         playerCard.addView(playbackRow)
+        val seekBar = SeekBar(this).apply {
+            max = 1000
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {}
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    val duration = PlayerSnapshot.durationMs
+                    if (duration > 0L) {
+                        val target = duration * (seekBar?.progress ?: 0) / 1000L
+                        if (!MusicNotificationListener.seekTo(target)) status.text = "Плеер не поддерживает перемотку"
+                    }
+                }
+            })
+        }
+        playerCard.addView(seekBar, LinearLayout.LayoutParams(-1, dp(38)))
+        playerCard.addView(actionButton("♡  ЛАЙК / УБРАТЬ ИЗ ИЗБРАННОГО", false) {
+            status.text = if (MusicNotificationListener.toggleLike()) "КОМАНДА ОТПРАВЛЕНА" else "ПЛЕЕР НЕ ПРЕДОСТАВЛЯЕТ ДЕЙСТВИЕ ЛАЙКА"
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
         content.addView(playerCard, LinearLayout.LayoutParams(-1, -2))
 
         val linkCard = LinearLayout(this).apply {
