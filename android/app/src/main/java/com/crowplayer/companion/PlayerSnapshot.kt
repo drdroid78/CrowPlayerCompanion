@@ -17,6 +17,7 @@ object PlayerSnapshot {
     @Volatile var positionMs: Long = 0L
     @Volatile var durationMs: Long = 0L
     @Volatile var lastUpdated: Long = 0L
+    @Volatile var isLiked: Boolean = false
 
     fun clear() {
         title = "Нет данных о треке"
@@ -28,5 +29,6 @@ object PlayerSnapshot {
         positionMs = 0L
         durationMs = 0L
         lastUpdated = System.currentTimeMillis()
+        isLiked = false
     }
 }
