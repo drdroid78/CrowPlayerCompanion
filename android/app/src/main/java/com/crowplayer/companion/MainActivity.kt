@@ -34,13 +34,15 @@ class MainActivity : Activity() {
     private lateinit var art: ImageView
     private lateinit var bleStatus: TextView
     private lateinit var ble: BleLink
+    private lateinit var trackSeekBar: SeekBar
+    private var userSeeking = false
     private val prefs by lazy { getSharedPreferences("crowplayer_settings", MODE_PRIVATE) }
     private val handler = Handler(Looper.getMainLooper())
     private val emerald = Color.rgb(0, 190, 125)
     private val muted = Color.rgb(151, 164, 160)
     private val panel = Color.rgb(21, 29, 29)
     private val refreshTask = object : Runnable {
-        override fun run() { renderSnapshot(); handler.postDelayed(this, 1000L) }
+        override fun run() { renderSnapshot(); handler.postDelayed(this, 250L) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,21 +118,23 @@ class MainActivity : Activity() {
         playback = label("ОЖИДАНИЕ", 10f, emerald, true)
         playbackRow.addView(playback, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
         playerCard.addView(playbackRow)
-        val seekBar = SeekBar(this).apply {
+        trackSeekBar = SeekBar(this).apply {
             max = 1000
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {}
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStartTrackingTouch(seekBar: SeekBar?) { userSeeking = true }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     val duration = PlayerSnapshot.durationMs
                     if (duration > 0L) {
                         val target = duration * (seekBar?.progress ?: 0) / 1000L
                         if (!MusicNotificationListener.seekTo(target)) status.text = "Плеер не поддерживает перемотку"
                     }
+                    userSeeking = false
+                    renderSnapshot()
                 }
             })
         }
-        playerCard.addView(seekBar, LinearLayout.LayoutParams(-1, dp(38)))
+        playerCard.addView(trackSeekBar, LinearLayout.LayoutParams(-1, dp(38)))
         playerCard.addView(actionButton("♡  ЛАЙК / УБРАТЬ ИЗ ИЗБРАННОГО", false) {
             status.text = if (MusicNotificationListener.toggleLike()) "КОМАНДА ОТПРАВЛЕНА" else "ПЛЕЕР НЕ ПРЕДОСТАВЛЯЕТ ДЕЙСТВИЕ ЛАЙКА"
         }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
@@ -264,6 +268,19 @@ class MainActivity : Activity() {
         val placeholder = art.tag as? View
         if (bitmap != null) { art.setImageBitmap(bitmap); placeholder?.visibility = View.GONE }
         else { art.setImageDrawable(null); placeholder?.visibility = View.VISIBLE }
+        val duration = PlayerSnapshot.durationMs
+        if (!userSeeking) {
+            if (duration > 0L) {
+                val basePosition = PlayerSnapshot.positionMs
+                val elapsed = if (playing) (System.currentTimeMillis() - PlayerSnapshot.lastUpdated).coerceAtLeast(0L) else 0L
+                val displayedPosition = (basePosition + elapsed).coerceIn(0L, duration)
+                trackSeekBar.progress = ((displayedPosition * 1000L) / duration).toInt()
+                trackSeekBar.isEnabled = true
+            } else {
+                trackSeekBar.progress = 0
+                trackSeekBar.isEnabled = false
+            }
+        }
         ble.send(PlayerSnapshot.title, PlayerSnapshot.artist, PlayerSnapshot.playback, PlayerSnapshot.positionMs, PlayerSnapshot.durationMs)
         ble.sendArtwork(bitmap)
     }
