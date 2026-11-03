@@ -11,8 +11,8 @@ android {
         applicationId = "com.crowplayer.companion"
         minSdk = 26
         targetSdk = 32
-        versionCode = 7
-        versionName = "0.5.0"
+        versionCode = 8
+        versionName = "0.6.0"
     }
 
     compileOptions {
