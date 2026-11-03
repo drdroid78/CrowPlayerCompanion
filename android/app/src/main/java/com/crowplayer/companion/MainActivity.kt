@@ -75,7 +75,7 @@ class MainActivity : Activity() {
             setPadding(dp(2), dp(8), dp(2), dp(18))
         }
         val mark = TextView(this).apply {
-            text = "Š"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.BLACK)
+            text = "Š"; textSize = 19f; gravity = Gravity.CENTER; setTextColor(Color.BLACK)
             typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
             background = rounded(emerald, 14f)
         }
@@ -101,7 +101,7 @@ class MainActivity : Activity() {
         art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.rgb(29, 51, 44)) }
         artFrame.addView(art, FrameLayout.LayoutParams(-1, -1))
         val placeholder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        placeholder.addView(label("Š", 68f, emerald, true))
+        placeholder.addView(label("Š", 52f, emerald, true))
         placeholder.addView(label("CROWPLAYER", 10f, Color.WHITE, true))
         artFrame.addView(placeholder, FrameLayout.LayoutParams(-1, -1))
         art.tag = placeholder
