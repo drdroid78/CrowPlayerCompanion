@@ -112,9 +112,13 @@ class MainActivity : Activity() {
         playerCard.addView(artFrame, LinearLayout.LayoutParams(dp(196), dp(196)).apply { bottomMargin = dp(14) })
 
         playerCard.addView(label("NOW PLAYING", 10f, emerald, true))
-        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        trackTitle = label("Нет данных о треке", 22f, Color.WHITE, true, Gravity.START).apply { maxLines = 2 }
-        titleRow.addView(trackTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        val titleRow = FrameLayout(this)
+        trackTitle = label("Нет данных о треке", 22f, Color.WHITE, true, Gravity.CENTER).apply {
+            maxLines = 2
+            setPadding(dp(42), dp(3), dp(42), dp(3))
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        titleRow.addView(trackTitle, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         likeButton = ImageView(this).apply {
             setImageResource(R.drawable.ic_heart_outline)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -122,7 +126,7 @@ class MainActivity : Activity() {
             isClickable = true
             isFocusable = true
             background = rounded(Color.TRANSPARENT, 24f)
-            setPadding(dp(11), dp(11), dp(11), dp(11))
+            setPadding(dp(9), dp(9), dp(9), dp(9))
             setOnClickListener {
                 if (likeRequestPending) return@setOnClickListener
                 likeRequestPending = true
@@ -131,12 +135,12 @@ class MainActivity : Activity() {
                     likeRequestPending = false
                     likeButton.isEnabled = true
                     status.text = if (confirmed) "ИЗБРАННОЕ ОБНОВЛЕНО"
-                        else "ЯНДЕКС МУЗЫКА НЕ ПОДТВЕРДИЛА ИЗМЕНЕНИЕ"
+                        else "ЯНДЕКС МУЗЫКА НЕ ПОДТВЕРДИЛА ЛАЙК"
                     renderSnapshot()
                 }
             }
         }
-        titleRow.addView(likeButton, LinearLayout.LayoutParams(dp(52), dp(52)))
+        titleRow.addView(likeButton, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.END or Gravity.CENTER_VERTICAL))
         playerCard.addView(titleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         artist = label("Запусти Яндекс Музыку", 15f, muted)
         playerCard.addView(artist, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
@@ -189,12 +193,17 @@ class MainActivity : Activity() {
         settingsCard.addView(label("НАСТРОЙКА МЕДИАДАННЫХ", 10f, muted, true, Gravity.START))
         notificationAccessStatus = label("Проверка доступа…", 12f, muted, false, Gravity.START)
         settingsCard.addView(notificationAccessStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        settingsCard.addView(actionButton("УПРАВЛЕНИЕ ДОСТУПОМ К УВЕДОМЛЕНИЯМ", false) {
+        val settingsActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        settingsActions.addView(actionButton("ДОСТУП", false) {
             try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
             catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(12) })
-        settingsCard.addView(actionButton("ОБНОВИТЬ ДАННЫЕ", false) { renderSnapshot() },
-            LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+        }, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(5) })
+        settingsActions.addView(actionButton("ОБНОВИТЬ", false) { renderSnapshot() },
+            LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(5) })
+        settingsCard.addView(settingsActions, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(10) })
         val nightSwitch = Switch(this).apply {
             text = "Ночной режим дисплея"
             setTextColor(Color.WHITE)
