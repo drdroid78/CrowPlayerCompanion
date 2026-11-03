@@ -148,6 +148,16 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean("night_mode", checked).apply(); ble.setNightMode(checked) }
         }
         settingsCard.addView(nightSwitch)
+        val encoderSeekSwitch = Switch(this).apply {
+            text = "Энкодер управляет перемоткой"
+            setTextColor(Color.WHITE)
+            isChecked = prefs.getBoolean("encoder_seek", false)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean("encoder_seek", checked).apply()
+                ble.setEncoderSeek(checked)
+            }
+        }
+        settingsCard.addView(encoderSeekSwitch)
         settingsCard.addView(label("ЯРКОСТЬ ЭКРАНА", 10f, muted, true, Gravity.START))
         val screenSeek = SeekBar(this).apply {
             max = 95; progress = (prefs.getInt("screen_brightness", 75) - 5).coerceIn(0,95)
