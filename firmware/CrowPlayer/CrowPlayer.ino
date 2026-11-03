@@ -71,6 +71,7 @@ bool nightMode=false;
 uint8_t screenBrightness=75, ledBrightness=42;
 uint32_t syncedEpochMs=0, epochReceivedAt=0, lastLedFrame=0, volumeOverlayUntil=0;
 bool autoNight=true;
+bool encoderSeek=false;
 int lastA=HIGH;
 bool lastButton=HIGH;
 uint32_t buttonDownAt=0, lastClickAt=0;
@@ -114,6 +115,7 @@ class MetaCallbacks : public NimBLECharacteristicCallbacks {
     ledBrightness=constrain((int)(doc["ledBrightness"] | 42),0,100);
     syncedEpochMs=doc["epochMs"] | 0UL; epochReceivedAt=millis();
     autoNight=doc["autoNight"] | true;
+    encoderSeek=doc["encoderSeek"] | false;
     accentLeds.setBrightness((uint8_t)(ledBrightness*255/100)); accentLeds.show();
     screenDirty=true;
   }
@@ -271,15 +273,15 @@ void setup() {
 }
 
 void loop() {
-  // Quadrature encoder: clockwise raises volume, counter-clockwise lowers it.
+  // Encoder: volume by default; optional media seek via companion setting.
   int a=digitalRead(PIN_ENC_A);
   if(a!=lastA && a==LOW) {
     if(digitalRead(PIN_ENC_B)!=a) {
-      volumeEstimate=min(100,volumeEstimate+2); volumeOverlayUntil=millis()+1200;
-      sendMedia(MEDIA_VOLUME_UP);
+      if(encoderSeek) sendMedia(MEDIA_FAST_FORWARD);
+      else { volumeEstimate=min(100,volumeEstimate+2); volumeOverlayUntil=millis()+1200; sendMedia(MEDIA_VOLUME_UP); }
     } else {
-      volumeEstimate=max(0,volumeEstimate-2); volumeOverlayUntil=millis()+1200;
-      sendMedia(MEDIA_VOLUME_DOWN);
+      if(encoderSeek) sendMedia(MEDIA_REWIND);
+      else { volumeEstimate=max(0,volumeEstimate-2); volumeOverlayUntil=millis()+1200; sendMedia(MEDIA_VOLUME_DOWN); }
     }
     screenDirty=true;
   }
