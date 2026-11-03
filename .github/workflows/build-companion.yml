@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - 'feature/crowplayer-0.6.0'
     paths:
       - "android/**"
       - ".github/workflows/build-companion.yml"
