@@ -105,7 +105,7 @@ class MainActivity : Activity() {
         placeholder.addView(label("CROWPLAYER", 10f, Color.WHITE, true))
         artFrame.addView(placeholder, FrameLayout.LayoutParams(-1, -1))
         art.tag = placeholder
-        playerCard.addView(artFrame, LinearLayout.LayoutParams(dp(236), dp(236)).apply { bottomMargin = dp(20) })
+        playerCard.addView(artFrame, LinearLayout.LayoutParams(dp(196), dp(196)).apply { bottomMargin = dp(14) })
 
         playerCard.addView(label("NOW PLAYING", 10f, emerald, true))
         trackTitle = label("Нет данных о треке", 22f, Color.WHITE, true)
@@ -115,12 +115,16 @@ class MainActivity : Activity() {
         playerCard.addView(artist, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
 
         val playbackRow = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
-        playback = label("ОЖИДАНИЕ", 9f, emerald, true).apply {
+        playback = label("ОЖИДАНИЕ", 10f, emerald, true).apply {
             isSingleLine = true
-            includeFontPadding = false
+            includeFontPadding = true
+            minHeight = dp(30)
+            gravity = Gravity.CENTER
         }
-        playbackRow.addView(playback, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
-        playerCard.addView(playbackRow, LinearLayout.LayoutParams(-1, -2))
+        playbackRow.addView(playback, LinearLayout.LayoutParams(-1, dp(34)).apply {
+            topMargin = dp(10)
+        })
+        playerCard.addView(playbackRow, LinearLayout.LayoutParams(-1, dp(44)))
         trackSeekBar = SeekBar(this).apply {
             max = 1000
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -137,7 +141,7 @@ class MainActivity : Activity() {
                 }
             })
         }
-        playerCard.addView(trackSeekBar, LinearLayout.LayoutParams(-1, dp(38)))
+        playerCard.addView(trackSeekBar, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(4) })
         playerCard.addView(actionButton("♡  ЛАЙК / УБРАТЬ ИЗ ИЗБРАННОГО", false) {
             status.text = if (MusicNotificationListener.toggleLike()) "КОМАНДА ОТПРАВЛЕНА" else "ПЛЕЕР НЕ ПРЕДОСТАВЛЯЕТ ДЕЙСТВИЕ ЛАЙКА"
         }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
