@@ -6,8 +6,8 @@
  * Controls:
  *   encoder clockwise / counter-clockwise : volume up / down
  *   single click                           : play / pause
- *   double click                           : previous track
- *   hold for 700 ms                        : next track
+ *   double click                           : next track
+ *   hold for 700 ms                        : mute
  */
 #include <Arduino.h>
 #include <math.h>
@@ -285,18 +285,18 @@ void loop() {
   }
   lastA=a;
 
-  // Button gestures: click=play/pause, double-click=previous, hold=next.
+  // Button gestures: click=play/pause, double-click=next, hold=mute (HID volume toggle fallback).
   bool sw=digitalRead(PIN_ENC_SW);
   if(lastButton==HIGH && sw==LOW) {
     buttonDownAt=millis(); longHandled=false;
   }
   if(sw==LOW && !longHandled && millis()-buttonDownAt>=700) {
-    sendMedia(MEDIA_NEXT_TRACK); longHandled=true; waitingSecondClick=false;
+    sendMedia(MEDIA_VOLUME_DOWN); longHandled=true; waitingSecondClick=false;
   }
   if(lastButton==LOW && sw==HIGH && !longHandled) {
     uint32_t now=millis();
     if(waitingSecondClick && now-lastClickAt<350) {
-      sendMedia(MEDIA_PREV_TRACK); waitingSecondClick=false;
+      sendMedia(MEDIA_NEXT_TRACK); waitingSecondClick=false;
     } else {
       waitingSecondClick=true; lastClickAt=now;
     }
