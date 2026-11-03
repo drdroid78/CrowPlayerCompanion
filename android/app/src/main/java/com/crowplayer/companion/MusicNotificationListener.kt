@@ -27,11 +27,30 @@ class MusicNotificationListener : NotificationListenerService() {
             controller.transportControls.seekTo(positionMs.coerceAtLeast(0L))
             return true
         }
+        private val optimisticLikes = mutableMapOf<String, Boolean>()
+
+        @Synchronized
         fun toggleLike(): Boolean {
             val controller = activeController ?: return false
             if ((controller.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SET_RATING == 0L) return false
-            val liked = controller.metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.isRated == true
-            controller.transportControls.setRating(android.media.Rating.newHeartRating(!liked))
+
+            val metadata = controller.metadata
+            val trackKey = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+                ?.takeIf { it.isNotBlank() }
+                ?: "${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()}|" +
+                   metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
+
+            // isRated only says that a rating exists; it does NOT mean the heart is on.
+            val rating = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
+            val reportedLiked = rating?.hasHeart() == true && rating.getHeartRating()
+            val currentLiked = optimisticLikes[trackKey] ?: reportedLiked
+            val nextLiked = !currentLiked
+
+            // Keep the requested state locally because some media sessions update metadata
+            // asynchronously (or do not echo the new rating back at all).
+            optimisticLikes[trackKey] = nextLiked
+            if (optimisticLikes.size > 100) optimisticLikes.clear()
+            controller.transportControls.setRating(android.media.Rating.newHeartRating(nextLiked))
             return true
         }
     }
