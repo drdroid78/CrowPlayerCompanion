@@ -10,11 +10,16 @@
  *   hold for 700 ms                        : next track
  */
 #include <Arduino.h>
+#include <math.h>
+#include <time.h>
 #include <LovyanGFX.hpp>
 #include <NimBLEDevice.h>
 #include <HijelHID_BLEKeyboard.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+#include "crowplayer_secrets.h"
 #include "skoda_splash.h"
 
 static constexpr int PIN_LCD_SCLK=10, PIN_LCD_MOSI=11, PIN_LCD_DC=3;
@@ -64,6 +69,8 @@ int volumeEstimate=50; // Estimate only; system volume is not readable over HID.
 uint32_t trackPositionMs=0, trackDurationMs=0, lastProgressDraw=0, positionReceivedAt=0;
 bool nightMode=false;
 uint8_t screenBrightness=75, ledBrightness=42;
+uint32_t syncedEpochMs=0, epochReceivedAt=0, lastLedFrame=0, volumeOverlayUntil=0;
+bool autoNight=true;
 int lastA=HIGH;
 bool lastButton=HIGH;
 uint32_t buttonDownAt=0, lastClickAt=0;
@@ -105,6 +112,8 @@ class MetaCallbacks : public NimBLECharacteristicCallbacks {
     nightMode=doc["nightMode"] | false;
     screenBrightness=constrain((int)(doc["screenBrightness"] | 75),5,100);
     ledBrightness=constrain((int)(doc["ledBrightness"] | 42),0,100);
+    syncedEpochMs=doc["epochMs"] | 0UL; epochReceivedAt=millis();
+    autoNight=doc["autoNight"] | true;
     accentLeds.setBrightness((uint8_t)(ledBrightness*255/100)); accentLeds.show();
     screenDirty=true;
   }
@@ -117,6 +126,35 @@ void drawCentered(const String& value, int y, int size, uint16_t color) {
 }
 
 // Fixed emerald-green accent lighting inspired by the requested Škoda theme.
+void updateAccentAnimation() {
+  uint32_t now=millis();
+  if(now-lastLedFrame<90) return;
+  lastLedFrame=now;
+  uint8_t base=(uint8_t)(ledBrightness*255/100);
+  if(playback=="playing") {
+    uint8_t pulse=(uint8_t)(35 + 25*(1.0f + sinf(now/420.0f)));
+    for(int i=0;i<NEOPIXEL_COUNT;i++) {
+      uint8_t wave=(uint8_t)((i*19 + (now/35))%70);
+      uint8_t level=(uint8_t)min(255,(int)base*(pulse+wave)/100);
+      accentLeds.setPixelColor(i,accentLeds.Color(0,(uint16_t)SKODA_GREEN_G*level/255,(uint16_t)SKODA_GREEN_B*level/255));
+    }
+  } else {
+    for(int i=0;i<NEOPIXEL_COUNT;i++) accentLeds.setPixelColor(i,accentLeds.Color(0,(uint16_t)SKODA_GREEN_G*base/255,(uint16_t)SKODA_GREEN_B*base/255));
+  }
+  accentLeds.show();
+}
+
+void setupOta() {
+  if(strlen(CROWPLAYER_WIFI_SSID)==0) { Serial.println("OTA disabled: configure Wi-Fi in crowplayer_secrets.h"); return; }
+  WiFi.mode(WIFI_STA); WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);
+  uint32_t started=millis();
+  while(WiFi.status()!=WL_CONNECTED && millis()-started<12000) delay(250);
+  if(WiFi.status()!=WL_CONNECTED) { Serial.println("OTA Wi-Fi not connected; USB upload remains available"); return; }
+  ArduinoOTA.setHostname("CrowPlayer-Skoda");
+  ArduinoOTA.begin();
+  Serial.print("OTA ready at "); Serial.println(WiFi.localIP());
+}
+
 void setAccentLighting() {
   accentLeds.begin();
   accentLeds.setBrightness(NEOPIXEL_BRIGHTNESS);
@@ -175,8 +213,20 @@ void drawPlayer() {
   int volEnd=220+(int)(100*volumeEstimate/100);
   if(volEnd>220) lcd.drawArc(120,120,116,111,220,volEnd,0xF02D,0xF02D);
   drawCentered(String("VOL ")+volumeEstimate+"%",226,1,0xF02D);
+  if(millis()<volumeOverlayUntil) {
+    lcd.fillRoundRect(35,88,170,64,12,0x18E3);
+    drawCentered("VOLUME",101,1,0xBDF7);
+    drawCentered(String(volumeEstimate)+"%",127,3,0xF02D);
+    lcd.drawRoundRect(55,139,130,5,2,0x4208);
+    lcd.fillRoundRect(55,139,130*volumeEstimate/100,5,2,0xF02D);
+  }
   lcd.setTextDatum(textdatum_t::top_center); lcd.setTextSize(1);
   lcd.setTextColor(0x7BEF,TFT_BLACK); lcd.drawString("CROWPLAYER",120,8);
+  if(syncedEpochMs>0) {
+    time_t raw=(time_t)((syncedEpochMs+(millis()-epochReceivedAt))/1000);
+    struct tm *clockNow=gmtime(&raw);
+    if(clockNow) { char clockText[6]; snprintf(clockText,sizeof(clockText),"%02d:%02d",clockNow->tm_hour,clockNow->tm_min); lcd.drawString(clockText,120,18); }
+  }
 }
 
 void sendMedia(uint16_t key) {
@@ -198,6 +248,7 @@ void setup() {
 
   keyboard.setLogLevel(HIDLogLevel::Normal);
   keyboard.begin();
+  setupOta();
 
   // Attach our metadata service to the NimBLE server created by the HID library.
   NimBLEServer* server=NimBLEDevice::getServer();
@@ -224,10 +275,10 @@ void loop() {
   int a=digitalRead(PIN_ENC_A);
   if(a!=lastA && a==LOW) {
     if(digitalRead(PIN_ENC_B)!=a) {
-      volumeEstimate=min(100,volumeEstimate+2);
+      volumeEstimate=min(100,volumeEstimate+2); volumeOverlayUntil=millis()+1200;
       sendMedia(MEDIA_VOLUME_UP);
     } else {
-      volumeEstimate=max(0,volumeEstimate-2);
+      volumeEstimate=max(0,volumeEstimate-2); volumeOverlayUntil=millis()+1200;
       sendMedia(MEDIA_VOLUME_DOWN);
     }
     screenDirty=true;
@@ -262,7 +313,15 @@ void loop() {
     screenDirty=false; lastProgressDraw=millis();
   }
   uint8_t targetBrightness=(uint8_t)(screenBrightness*255/100);
-  if(nightMode) targetBrightness=min(targetBrightness,(uint8_t)18);
+  bool scheduledNight=false;
+  if(autoNight && syncedEpochMs>0) {
+    uint32_t epoch=(syncedEpochMs+(millis()-epochReceivedAt))/1000;
+    time_t raw=(time_t)epoch; struct tm *tmNow=gmtime(&raw);
+    if(tmNow) scheduledNight=(tmNow->tm_hour>=22 || tmNow->tm_hour<7);
+  }
+  if(nightMode || scheduledNight) targetBrightness=min(targetBrightness,(uint8_t)18);
   ledcWrite(PIN_LCD_BL,targetBrightness);
+  updateAccentAnimation();
+  if(WiFi.status()==WL_CONNECTED) ArduinoOTA.handle();
   delay(3);
 }

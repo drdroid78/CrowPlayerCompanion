@@ -210,6 +210,8 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
             .put("nightMode", nightMode)
             .put("screenBrightness", screenBrightness)
             .put("ledBrightness", ledBrightness)
+            .put("epochMs", System.currentTimeMillis())
+            .put("autoNight", true)
             .toString()
         flushLatest()
     }

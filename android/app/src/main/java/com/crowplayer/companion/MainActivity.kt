@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var art: ImageView
     private lateinit var bleStatus: TextView
     private lateinit var ble: BleLink
+    private val prefs by lazy { getSharedPreferences("crowplayer_settings", MODE_PRIVATE) }
     private val handler = Handler(Looper.getMainLooper())
     private val emerald = Color.rgb(0, 190, 125)
     private val muted = Color.rgb(151, 164, 160)
@@ -48,6 +49,9 @@ class MainActivity : Activity() {
         window.navigationBarColor = Color.rgb(7, 13, 13)
         window.decorView.systemUiVisibility = 0
         ble = BleLink(this) { message -> runOnUiThread { bleStatus.text = message } }
+        ble.setNightMode(prefs.getBoolean("night_mode", false))
+        ble.setScreenBrightness(prefs.getInt("screen_brightness", 75))
+        ble.setLedBrightness(prefs.getInt("led_brightness", 42))
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -140,14 +144,15 @@ class MainActivity : Activity() {
             text = "Ночной режим дисплея"
             setTextColor(Color.WHITE)
             setPadding(0, dp(12), 0, dp(8))
-            setOnCheckedChangeListener { _, checked -> ble.setNightMode(checked) }
+            isChecked = prefs.getBoolean("night_mode", false)
+            setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean("night_mode", checked).apply(); ble.setNightMode(checked) }
         }
         settingsCard.addView(nightSwitch)
         settingsCard.addView(label("ЯРКОСТЬ ЭКРАНА", 10f, muted, true, Gravity.START))
         val screenSeek = SeekBar(this).apply {
-            max = 95; progress = 70
+            max = 95; progress = (prefs.getInt("screen_brightness", 75) - 5).coerceIn(0,95)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) ble.setScreenBrightness(progress + 5) }
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) { prefs.edit().putInt("screen_brightness", progress + 5).apply(); ble.setScreenBrightness(progress + 5) } }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {}
             })
@@ -155,9 +160,9 @@ class MainActivity : Activity() {
         settingsCard.addView(screenSeek, LinearLayout.LayoutParams(-1, dp(38)))
         settingsCard.addView(label("ЯРКОСТЬ ЗЕЛЁНОЙ ПОДСВЕТКИ", 10f, muted, true, Gravity.START))
         val ledSeek = SeekBar(this).apply {
-            max = 100; progress = 42
+            max = 100; progress = prefs.getInt("led_brightness", 42).coerceIn(0,100)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) ble.setLedBrightness(progress) }
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) { prefs.edit().putInt("led_brightness", progress).apply(); ble.setLedBrightness(progress) } }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {}
             })
