@@ -17,8 +17,10 @@ class MusicNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile var activeController: MediaController? = null
             private set
-        private val commandExecutor = Executors.newSingleThreadExecutor()
-        private val optimisticLikes = mutableMapOf<String, Boolean>()
+        // MediaSession Binder calls run off the UI thread. A cached pool prevents
+        // one stalled vendor/Yandex session call from blocking every later command.
+        private val commandExecutor = Executors.newCachedThreadPool()
+        private val mainHandler = Handler(Looper.getMainLooper())
 
         fun playPause() {
             val controller = activeController ?: return
@@ -41,41 +43,61 @@ class MusicNotificationListener : NotificationListenerService() {
             return true
         }
 
-        /** Never performs a MediaSession Binder call on the UI thread. */
+        /**
+         * Sends a heart rating only when the active session advertises SET_RATING.
+         * The UI is updated only after the session reports the requested user rating
+         * back through MediaMetadata; a successful Binder call alone is not confirmation.
+         */
         fun toggleLike(onResult: (Boolean) -> Unit) {
             val controller = activeController
-            if (controller == null) { onResult(false); return }
+            if (controller == null) { mainHandler.post { onResult(false) }; return }
             val metadata = controller.metadata
-            val trackKey = "${controller.packageName.orEmpty()}|" +
-                (metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.takeIf { it.isNotBlank() }
-                    ?: "${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()}|" +
-                       metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty())
-
-            val nextLiked: Boolean
-            synchronized(optimisticLikes) {
-                val reportedLiked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true
-                val currentLiked = optimisticLikes[trackKey] ?: reportedLiked
-                nextLiked = !currentLiked
-                optimisticLikes[trackKey] = nextLiked
-                PlayerSnapshot.isLiked = nextLiked
+            val currentRating = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
+            val actions = controller.playbackState?.actions ?: 0L
+            if (currentRating == null ||
+                currentRating.ratingStyle != Rating.RATING_HEART ||
+                actions and PlaybackState.ACTION_SET_RATING == 0L) {
+                mainHandler.post { onResult(false) }
+                return
             }
 
+            val desired = !currentRating.hasHeart()
+            val packageName = controller.packageName
             commandExecutor.execute {
-                var success = false
                 try {
-                    // A fresh controller reference avoids sending to a session that was replaced.
                     val target = activeController
-                    if (target != null && target.packageName == controller.packageName) {
-                        target.transportControls.setRating(Rating.newHeartRating(nextLiked))
-                        success = true
+                    if (target == null || target.packageName != packageName) {
+                        mainHandler.post { onResult(false) }
+                        return@execute
                     }
+                    target.transportControls.setRating(Rating.newHeartRating(desired))
+                    // Wait for metadata confirmation; do not fabricate a local liked state.
+                    var attempt = 0
+                    val verify = object : Runnable {
+                        override fun run() {
+                            val fresh = activeController
+                            val rating = if (fresh?.packageName == packageName)
+                                fresh.metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
+                            else null
+                            if (rating?.ratingStyle == Rating.RATING_HEART && rating.hasHeart() == desired) {
+                                PlayerSnapshot.isLiked = desired
+                                onResult(true)
+                            } else if (++attempt < 6) {
+                                mainHandler.postDelayed(this, 350L)
+                            } else {
+                                PlayerSnapshot.isLiked = currentRating.hasHeart()
+                                onResult(false)
+                            }
+                        }
+                    }
+                    mainHandler.postDelayed(verify, 350L)
                 } catch (e: Exception) {
                     Log.w("CrowPlayer", "Could not send heart rating", e)
-                    synchronized(optimisticLikes) { optimisticLikes[trackKey] = !nextLiked }
+                    mainHandler.post { PlayerSnapshot.isLiked = currentRating.hasHeart(); onResult(false) }
                 }
-                Handler(Looper.getMainLooper()).post { onResult(success) }
             }
         }
+
     }
 
     private val handler = Handler(Looper.getMainLooper())
