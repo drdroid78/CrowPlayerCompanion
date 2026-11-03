@@ -2,69 +2,84 @@ package com.crowplayer.companion
 
 import android.content.ComponentName
 import android.media.MediaMetadata
+import android.media.Rating
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
-import android.service.notification.NotificationListenerService
-import android.util.Log
 import android.os.Handler
 import android.os.Looper
+import android.service.notification.NotificationListenerService
+import android.util.Log
+import java.util.concurrent.Executors
 
 /** Reads the active Android media session exposed by Yandex Music / HarmonyOS. */
 class MusicNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile var activeController: MediaController? = null
             private set
+        private val commandExecutor = Executors.newFixedThreadPool(2)
+        private val optimisticLikes = mutableMapOf<String, Boolean>()
+
         fun playPause() {
             val controller = activeController ?: return
-            if (controller.playbackState?.state == PlaybackState.STATE_PLAYING)
-                controller.transportControls.pause()
-            else controller.transportControls.play()
+            commandExecutor.execute {
+                try {
+                    if (controller.playbackState?.state == PlaybackState.STATE_PLAYING)
+                        controller.transportControls.pause()
+                    else controller.transportControls.play()
+                } catch (e: Exception) { Log.w("CrowPlayer", "Playback command failed", e) }
+            }
         }
+
         fun seekTo(positionMs: Long): Boolean {
             val controller = activeController ?: return false
             if ((controller.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO == 0L) return false
-            controller.transportControls.seekTo(positionMs.coerceAtLeast(0L))
+            commandExecutor.execute {
+                try { controller.transportControls.seekTo(positionMs.coerceAtLeast(0L)) }
+                catch (e: Exception) { Log.w("CrowPlayer", "Seek command failed", e) }
+            }
             return true
         }
-        private val optimisticLikes = mutableMapOf<String, Boolean>()
 
-        @Synchronized
-        fun toggleLike(): Boolean {
-            val controller = activeController ?: return false
+        /** Never performs a MediaSession Binder call on the UI thread. */
+        fun toggleLike(onResult: (Boolean) -> Unit) {
+            val controller = activeController
+            if (controller == null) { onResult(false); return }
             val metadata = controller.metadata
-            val trackKey = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
-                ?.takeIf { it.isNotBlank() }
-                ?: "${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()}|" +
-                   metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
+            val trackKey = "${controller.packageName.orEmpty()}|" +
+                (metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.takeIf { it.isNotBlank() }
+                    ?: "${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()}|" +
+                       metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty())
 
-            // isRated only says that a rating exists; it does NOT mean the heart is on.
-            val rating = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
-            val reportedLiked = rating?.hasHeart() == true
-            val currentLiked = optimisticLikes[trackKey] ?: reportedLiked
-            val nextLiked = !currentLiked
+            val nextLiked: Boolean
+            synchronized(optimisticLikes) {
+                val reportedLiked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true
+                val currentLiked = optimisticLikes[trackKey] ?: reportedLiked
+                nextLiked = !currentLiked
+                optimisticLikes[trackKey] = nextLiked
+            }
 
-            // Keep the requested state locally because some media sessions update metadata
-            // asynchronously (or do not echo the new rating back at all).
-            optimisticLikes[trackKey] = nextLiked
-            // Send an explicit heart=false rating to remove the like. An unrated
-            // value is often ignored by media-session providers such as Yandex Music.
-            return try {
-                controller.transportControls.setRating(android.media.Rating.newHeartRating(nextLiked))
-                true
-            } catch (e: Exception) {
-                Log.w("CrowPlayer", "Could not send heart rating", e)
-                optimisticLikes[trackKey] = currentLiked
-                false
+            commandExecutor.execute {
+                var success = false
+                try {
+                    // A fresh controller reference avoids sending to a session that was replaced.
+                    val target = activeController
+                    if (target != null && target.packageName == controller.packageName) {
+                        target.transportControls.setRating(Rating.newHeartRating(nextLiked))
+                        success = true
+                    }
+                } catch (e: Exception) {
+                    Log.w("CrowPlayer", "Could not send heart rating", e)
+                    synchronized(optimisticLikes) { optimisticLikes[trackKey] = !nextLiked }
+                }
+                Handler(Looper.getMainLooper()).post { onResult(success) }
             }
         }
     }
+
     private val handler = Handler(Looper.getMainLooper())
     private val poll = object : Runnable {
-        override fun run() {
-            updateSnapshot()
-            handler.postDelayed(this, 1000L)
-        }
+        override fun run() { updateSnapshot(); handler.postDelayed(this, 1000L) }
     }
 
     override fun onListenerConnected() {
@@ -101,20 +116,16 @@ class MusicNotificationListener : NotificationListenerService() {
             PlayerSnapshot.playback = "Нет доступа к медиасессиям"
             PlayerSnapshot.lastUpdated = System.currentTimeMillis()
             Log.w("CrowPlayer", "Media session access unavailable", e)
-        } catch (e: Exception) {
-            Log.w("CrowPlayer", "Could not read media session", e)
-        }
+        } catch (e: Exception) { Log.w("CrowPlayer", "Could not read media session", e) }
     }
 
     private fun applyController(controller: MediaController) {
         val metadata = controller.metadata
         val state = controller.playbackState?.state
         val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
-            ?: metadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
-            ?: "Нет названия трека"
+            ?: metadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: "Нет названия трека"
         val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
-            ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
-            ?: "Исполнитель неизвестен"
+            ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST) ?: "Исполнитель неизвестен"
         val artwork = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
         PlayerSnapshot.title = title.take(80)
