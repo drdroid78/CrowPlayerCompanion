@@ -145,7 +145,10 @@ class MainActivity : Activity() {
         }
         playerCard.addView(trackSeekBar, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(4) })
         playerCard.addView(actionButton("♡  ЛАЙК / УБРАТЬ ИЗ ИЗБРАННОГО", false) {
-            status.text = if (MusicNotificationListener.toggleLike { ok -> status.text = if (ok) "КОМАНДА ОТПРАВЛЕНА" else "НЕ УДАЛОСЬ ОТПРАВИТЬ КОМАНДУ" }; "ОТПРАВКА КОМАНДЫ…"
+            status.text = "ОТПРАВКА КОМАНДЫ…"
+            MusicNotificationListener.toggleLike { ok ->
+                status.text = if (ok) "КОМАНДА ОТПРАВЛЕНА" else "НЕ УДАЛОСЬ ОТПРАВИТЬ КОМАНДУ"
+            }
         }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
         content.addView(playerCard, LinearLayout.LayoutParams(-1, -2))
 
