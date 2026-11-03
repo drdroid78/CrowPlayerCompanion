@@ -3,6 +3,7 @@ package com.crowplayer.companion
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -33,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var source: TextView
     private lateinit var art: ImageView
     private lateinit var bleStatus: TextView
+    private lateinit var notificationAccessStatus: TextView
     private lateinit var ble: BleLink
     private lateinit var trackSeekBar: SeekBar
     private var userSeeking = false
@@ -163,7 +165,9 @@ class MainActivity : Activity() {
             background = rounded(Color.rgb(17, 25, 24), 18f)
         }
         settingsCard.addView(label("НАСТРОЙКА МЕДИАДАННЫХ", 10f, muted, true, Gravity.START))
-        settingsCard.addView(actionButton("ДОСТУП К УВЕДОМЛЕНИЯМ", false) {
+        notificationAccessStatus = label("Проверка доступа…", 12f, muted, false, Gravity.START)
+        settingsCard.addView(notificationAccessStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        settingsCard.addView(actionButton("УПРАВЛЕНИЕ ДОСТУПОМ К УВЕДОМЛЕНИЯМ", false) {
             try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
             catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(12) })
@@ -240,6 +244,17 @@ class MainActivity : Activity() {
         setOnClickListener { action() }
     }
 
+    private fun hasNotificationAccess(): Boolean {
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
+        return enabled.split(":").any { ComponentName.unflattenFromString(it) == ComponentName(this, MusicNotificationListener::class.java) }
+    }
+
+    private fun refreshNotificationAccessStatus() {
+        val enabled = hasNotificationAccess()
+        notificationAccessStatus.text = if (enabled) "● Доступ к уведомлениям включён" else "○ Доступ выключен — включи его для работы плеера"
+        notificationAccessStatus.setTextColor(if (enabled) emerald else Color.rgb(255, 185, 90))
+    }
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
@@ -258,7 +273,19 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 71 && grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) ble.start()
     }
-    override fun onResume() { super.onResume(); handler.removeCallbacks(refreshTask); handler.post(refreshTask) }
+    override fun onResume() {
+        super.onResume()
+        refreshNotificationAccessStatus()
+        handler.removeCallbacks(refreshTask)
+        handler.post(refreshTask)
+        if (!prefs.getBoolean("notification_access_prompted", false)) {
+            prefs.edit().putBoolean("notification_access_prompted", true).apply()
+            if (!hasNotificationAccess()) handler.postDelayed({
+                try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+            }, 350L)
+        }
+    }
     override fun onPause() { handler.removeCallbacks(refreshTask); super.onPause() }
     override fun onDestroy() { ble.close(); super.onDestroy() }
 
