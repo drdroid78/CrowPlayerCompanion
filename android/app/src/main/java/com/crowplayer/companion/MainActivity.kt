@@ -29,7 +29,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var trackTitle: TextView
-    private lateinit var likeButton: TextView
+    private lateinit var likeButton: ImageView
     private var likeRequestPending = false
     private lateinit var artist: TextView
     private lateinit var playback: TextView
@@ -115,19 +115,23 @@ class MainActivity : Activity() {
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         trackTitle = label("Нет данных о треке", 22f, Color.WHITE, true, Gravity.START).apply { maxLines = 2 }
         titleRow.addView(trackTitle, LinearLayout.LayoutParams(0, -2, 1f))
-        likeButton = TextView(this).apply {
-            text = "♡"; textSize = 34f; gravity = Gravity.CENTER
-            setTextColor(muted); isClickable = true; isFocusable = true
-            background = rounded(Color.TRANSPARENT, 24f)
+        likeButton = ImageView(this).apply {
+            setImageResource(R.drawable.ic_heart_outline)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
             contentDescription = "Добавить трек в избранное"
+            isClickable = true
+            isFocusable = true
+            background = rounded(Color.TRANSPARENT, 24f)
+            setPadding(dp(11), dp(11), dp(11), dp(11))
             setOnClickListener {
                 if (likeRequestPending) return@setOnClickListener
                 likeRequestPending = true
                 isEnabled = false
-                MusicNotificationListener.toggleLike { ok ->
+                MusicNotificationListener.toggleLike { confirmed ->
                     likeRequestPending = false
                     likeButton.isEnabled = true
-                    if (!ok) status.text = "НЕ УДАЛОСЬ ОТПРАВИТЬ ЛАЙК"
+                    status.text = if (confirmed) "ИЗБРАННОЕ ОБНОВЛЕНО"
+                        else "ЯНДЕКС МУЗЫКА НЕ ПОДТВЕРДИЛА ИЗМЕНЕНИЕ"
                     renderSnapshot()
                 }
             }
@@ -311,8 +315,7 @@ class MainActivity : Activity() {
         val hasSession = PlayerSnapshot.lastUpdated > 0L && (PlayerSnapshot.packageName.isNotBlank() || PlayerSnapshot.playback == "Нет доступа к медиасессиям")
         status.text = if (hasSession) "МЕДИАСЕССИЯ ОБНАРУЖЕНА" else "МЕДИАСЕССИЯ НЕ НАЙДЕНА"
         trackTitle.text = PlayerSnapshot.title
-        likeButton.text = if (PlayerSnapshot.isLiked) "♥" else "♡"
-        likeButton.setTextColor(if (PlayerSnapshot.isLiked) Color.rgb(255, 77, 109) else muted)
+        likeButton.setImageResource(if (PlayerSnapshot.isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline)
         likeButton.contentDescription = if (PlayerSnapshot.isLiked) "Убрать из избранного" else "Добавить в избранное"
         artist.text = if (PlayerSnapshot.album.isNotBlank()) "${PlayerSnapshot.artist}  ·  ${PlayerSnapshot.album}" else PlayerSnapshot.artist
         val playing = PlayerSnapshot.playback.equals("playing", true)
