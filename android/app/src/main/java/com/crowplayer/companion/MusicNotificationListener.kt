@@ -50,7 +50,13 @@ class MusicNotificationListener : NotificationListenerService() {
             // asynchronously (or do not echo the new rating back at all).
             optimisticLikes[trackKey] = nextLiked
             if (optimisticLikes.size > 100) optimisticLikes.clear()
-            controller.transportControls.setRating(android.media.Rating.newHeartRating(nextLiked))
+            val requestedRating = if (nextLiked) {
+                android.media.Rating.newHeartRating(true)
+            } else {
+                // Yandex Music clears a like when it receives an unrated heart value.
+                android.media.Rating.newUnratedRating(android.media.Rating.RATING_HEART)
+            }
+            controller.transportControls.setRating(requestedRating)
             return true
         }
     }
