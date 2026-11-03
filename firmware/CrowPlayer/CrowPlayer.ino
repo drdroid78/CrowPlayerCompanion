@@ -50,7 +50,12 @@ Adafruit_NeoPixel accentLeds(NEOPIXEL_COUNT, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800)
 HijelHID_BLEKeyboard keyboard("CrowPlayer", "CrowPlayer", 100);
 static const char* SERVICE_UUID="7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e";
 static const char* META_UUID   ="7d2ea28b-f7bd-485a-bd9d-92ad6ecfe93e";
+static const char* ART_UUID    ="7d2ea28c-f7bd-485a-bd9d-92ad6ecfe93e";
 static NimBLECharacteristic* metaChar=nullptr;
+static NimBLECharacteristic* artChar=nullptr;
+static constexpr uint16_t ART_W=80, ART_H=80, ART_PIXELS=ART_W*ART_H;
+static uint16_t* albumPixels=nullptr;
+static uint16_t artExpected=0, artReceived=0;
 
 String trackTitle="Waiting for music";
 String trackArtist="Open Yandex Music";
@@ -65,6 +70,22 @@ uint32_t buttonDownAt=0, lastClickAt=0;
 bool longHandled=false, waitingSecondClick=false;
 bool screenDirty=true;
 bool lastPaired=false;
+
+class ArtworkCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
+    std::string packet=c->getValue();
+    if(packet.size()<4 || albumPixels==nullptr) return;
+    uint16_t offset=((uint8_t)packet[0]<<8)|(uint8_t)packet[1];
+    uint16_t total=((uint8_t)packet[2]<<8)|(uint8_t)packet[3];
+    size_t bytes=packet.size()-4;
+    if(total!=ART_PIXELS*2 || offset+bytes>total || (bytes&1)) return;
+    if(offset==0) { artExpected=total; artReceived=0; }
+    if(total!=artExpected || offset!=artReceived) return;
+    memcpy(reinterpret_cast<uint8_t*>(albumPixels)+offset,packet.data()+4,bytes);
+    artReceived+=bytes;
+    if(artReceived==artExpected) { screenDirty=true; Serial.println("Album artwork received"); }
+  }
+};
 
 class MetaCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
@@ -126,9 +147,9 @@ void drawPairing() {
 void drawPlayer() {
   lcd.fillScreen(TFT_BLACK);
   lcd.drawCircle(120,120,114,0x2925); lcd.drawCircle(120,120,108,0x4208);
-  // Album-art placeholder. Current BLE metadata protocol sends title/artist/state.
-  lcd.fillRoundRect(76,24,88,88,12,0x4018);
-  lcd.fillCircle(120,68,23,0x801F); lcd.fillCircle(120,68,9,0x4018);
+  // 80x80 RGB565 album artwork is transferred in ordered BLE chunks.
+  if(albumPixels && artReceived==ART_PIXELS*2) lcd.pushImage(80,28,ART_W,ART_H,albumPixels);
+  else { lcd.fillRoundRect(76,24,88,88,12,0x4018); lcd.fillCircle(120,68,23,0x801F); lcd.fillCircle(120,68,9,0x4018); }
   String title=trackTitle;
   if(title.length()>22) title=title.substring(0,21)+"…";
   String artist=trackArtist;
@@ -167,6 +188,7 @@ void setup() {
   pinMode(PIN_POWER_GATE,OUTPUT); digitalWrite(PIN_POWER_GATE,HIGH);
   ledcAttach(PIN_LCD_BL,5000,8); ledcWrite(PIN_LCD_BL,255);
   setAccentLighting();
+  albumPixels=(uint16_t*)ps_malloc(ART_PIXELS*sizeof(uint16_t));
   pinMode(PIN_ENC_A,INPUT_PULLUP); pinMode(PIN_ENC_B,INPUT_PULLUP);
   pinMode(PIN_ENC_SW,INPUT_PULLUP); lastA=digitalRead(PIN_ENC_A);
 
@@ -184,6 +206,8 @@ void setup() {
     metaChar=service->createCharacteristic(META_UUID,
       NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
     metaChar->setCallbacks(new MetaCallbacks());
+    artChar=service->createCharacteristic(ART_UUID,NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+    artChar->setCallbacks(new ArtworkCallbacks());
     service->start();
     // Do not force the 128-bit UUID into the legacy advertising packet; HID name
     // remains discoverable and the Android companion scans for the name.

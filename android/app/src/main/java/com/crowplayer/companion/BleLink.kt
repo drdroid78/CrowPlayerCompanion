@@ -2,6 +2,9 @@ package com.crowplayer.companion
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
+import java.util.ArrayDeque
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
@@ -20,13 +23,19 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
     companion object {
         val SERVICE: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
         val META: UUID = UUID.fromString("7d2ea28b-f7bd-485a-bd9d-92ad6ecfe93e")
+        val ART: UUID = UUID.fromString("7d2ea28c-f7bd-485a-bd9d-92ad6ecfe93e")
     }
 
     private val manager = context.getSystemService(BluetoothManager::class.java)
     private var gatt: BluetoothGatt? = null
     private var characteristic: BluetoothGattCharacteristic? = null
+    private var artCharacteristic: BluetoothGattCharacteristic? = null
+    private val artQueue = ArrayDeque<ByteArray>()
+    private var artWriteInFlight = false
+    private var lastArtworkKey = 0
     private var scanning = false
     private var mtuReady = false
+    private var negotiatedMtu = 23
     private var writeInFlight = false
     private var latestPayload = ""
     private var sentPayload = ""
@@ -53,26 +62,30 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
-            mtuReady = true // Default MTU also works for short metadata payloads.
-            flushLatest()
+            negotiatedMtu = if (status == BluetoothGatt.GATT_SUCCESS) mtu else 23
+            mtuReady = true
+            flushLatest(); flushArtwork()
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             val service = g.getService(SERVICE)
             characteristic = service?.getCharacteristic(META)
+            artCharacteristic = service?.getCharacteristic(ART)
             if (status == BluetoothGatt.GATT_SUCCESS && characteristic != null) {
                 onStatus("Связь с CrowPanel установлена")
-                if (mtuReady) flushLatest()
+                if (mtuReady) { flushLatest(); flushArtwork() }
             } else {
                 onStatus("CrowPanel найден, но сервис CrowPlayer не найден")
             }
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
+            if (c.uuid == ART) { artWriteInFlight = false; if (status != BluetoothGatt.GATT_SUCCESS) onStatus("Ошибка передачи обложки ($status)"); flushArtwork(); return }
             writeInFlight = false
             if (status == BluetoothGatt.GATT_SUCCESS) sentPayload = String(c.value ?: byteArrayOf(), Charsets.UTF_8)
             else onStatus("Ошибка передачи данных на CrowPanel ($status)")
             flushLatest()
+            flushArtwork()
         }
     }
 
@@ -133,6 +146,59 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
     fun setScreenBrightness(value: Int) { screenBrightness = value.coerceIn(5, 100); sentPayload = ""; flushLatest() }
     fun setLedBrightness(value: Int) { ledBrightness = value.coerceIn(0, 100); sentPayload = ""; flushLatest() }
 
+    fun sendArtwork(bitmap: Bitmap?) {
+        if (bitmap == null) return
+        val key = 31 * bitmap.width + bitmap.height + bitmap.generationId
+        if (key == lastArtworkKey) return
+        lastArtworkKey = key
+        val scaled = Bitmap.createScaledBitmap(bitmap, 80, 80, true)
+        val pixels = IntArray(80 * 80)
+        scaled.getPixels(pixels, 0, 80, 0, 0, 80, 80)
+        if (scaled !== bitmap) scaled.recycle()
+        val raw = ByteArray(pixels.size * 2)
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            val r = (c shr 19) and 0x1f
+            val g = (c shr 10) and 0x3f
+            val b = (c shr 3) and 0x1f
+            val rgb565 = (r shl 11) or (g shl 5) or b
+            raw[i * 2] = (rgb565 shr 8).toByte()
+            raw[i * 2 + 1] = rgb565.toByte()
+        }
+        synchronized(artQueue) {
+            artQueue.clear()
+            val mtuPayload = (negotiatedMtu - 7).coerceAtLeast(16)
+            var offset = 0
+            while (offset < raw.size) {
+                val count = minOf(mtuPayload, raw.size - offset)
+                val packet = ByteArray(count + 4)
+                packet[0] = (offset shr 8).toByte(); packet[1] = offset.toByte()
+                packet[2] = (raw.size shr 8).toByte(); packet[3] = raw.size.toByte()
+                System.arraycopy(raw, offset, packet, 4, count)
+                artQueue.add(packet)
+                offset += count
+            }
+        }
+        flushArtwork()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun flushArtwork() {
+        val g = gatt ?: return
+        val c = artCharacteristic ?: return
+        if (!mtuReady || artWriteInFlight) return
+        val packet = synchronized(artQueue) { if (artQueue.isEmpty()) null else artQueue.removeFirst() } ?: return
+        try {
+            c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            c.value = packet
+            artWriteInFlight = g.writeCharacteristic(c)
+            if (!artWriteInFlight) synchronized(artQueue) { artQueue.addFirst(packet) }
+        } catch (_: Exception) {
+            artWriteInFlight = false
+            synchronized(artQueue) { artQueue.addFirst(packet) }
+        }
+    }
+
     fun send(title: String, artist: String, playback: String, positionMs: Long = 0L, durationMs: Long = 0L) {
         val state = if (playback.equals("playing", true) || playback.contains("Воспроизводится", true)) "playing" else "paused"
         latestPayload = JSONObject()
@@ -169,7 +235,11 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
         try { gatt?.disconnect(); gatt?.close() } catch (_: Exception) {}
         gatt = null
         characteristic = null
+        artCharacteristic = null
+        artWriteInFlight = false
+        synchronized(artQueue) { artQueue.clear() }
         mtuReady = false
+        negotiatedMtu = 23
         writeInFlight = false
     }
 }

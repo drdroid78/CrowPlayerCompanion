@@ -232,5 +232,6 @@ class MainActivity : Activity() {
         if (bitmap != null) { art.setImageBitmap(bitmap); placeholder?.visibility = View.GONE }
         else { art.setImageDrawable(null); placeholder?.visibility = View.VISIBLE }
         ble.send(PlayerSnapshot.title, PlayerSnapshot.artist, PlayerSnapshot.playback, PlayerSnapshot.positionMs, PlayerSnapshot.durationMs)
+        ble.sendArtwork(bitmap)
     }
 }
