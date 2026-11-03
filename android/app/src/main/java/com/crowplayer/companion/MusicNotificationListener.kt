@@ -12,6 +12,29 @@ import android.os.Looper
 
 /** Reads the active Android media session exposed by Yandex Music / HarmonyOS. */
 class MusicNotificationListener : NotificationListenerService() {
+    companion object {
+        @Volatile var activeController: MediaController? = null
+            private set
+        fun playPause() {
+            val controller = activeController ?: return
+            if (controller.playbackState?.state == PlaybackState.STATE_PLAYING)
+                controller.transportControls.pause()
+            else controller.transportControls.play()
+        }
+        fun seekTo(positionMs: Long): Boolean {
+            val controller = activeController ?: return false
+            if ((controller.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO == 0L) return false
+            controller.transportControls.seekTo(positionMs.coerceAtLeast(0L))
+            return true
+        }
+        fun toggleLike(): Boolean {
+            val controller = activeController ?: return false
+            if ((controller.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SET_RATING == 0L) return false
+            val liked = controller.metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.isRated == true
+            controller.transportControls.setRating(android.media.Rating.newHeartRating(!liked))
+            return true
+        }
+    }
     private val handler = Handler(Looper.getMainLooper())
     private val poll = object : Runnable {
         override fun run() {
