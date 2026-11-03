@@ -293,7 +293,7 @@ void loop() {
     buttonDownAt=millis(); longHandled=false;
   }
   if(sw==LOW && !longHandled && millis()-buttonDownAt>=700) {
-    sendMedia(MEDIA_VOLUME_DOWN); longHandled=true; waitingSecondClick=false;
+    sendMedia(0x00E2); longHandled=true; waitingSecondClick=false;
   }
   if(lastButton==LOW && sw==HIGH && !longHandled) {
     uint32_t now=millis();
