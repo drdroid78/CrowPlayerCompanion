@@ -42,7 +42,7 @@ class MusicNotificationListener : NotificationListenerService() {
 
             // isRated only says that a rating exists; it does NOT mean the heart is on.
             val rating = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
-            val reportedLiked = rating?.hasHeart() == true && rating.getHeartRating()
+            val reportedLiked = rating?.hasHeart() == true
             val currentLiked = optimisticLikes[trackKey] ?: reportedLiked
             val nextLiked = !currentLiked
 
