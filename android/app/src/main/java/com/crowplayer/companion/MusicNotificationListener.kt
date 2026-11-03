@@ -51,6 +51,7 @@ class MusicNotificationListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         handler.removeCallbacks(poll)
+        activeController = null
         super.onListenerDisconnected()
     }
 
@@ -66,9 +67,11 @@ class MusicNotificationListener : NotificationListenerService() {
             val controller = sessions.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
                 ?: sessions.firstOrNull()
             if (controller == null) {
+                activeController = null
                 PlayerSnapshot.clear()
                 return
             }
+            activeController = controller
             applyController(controller)
         } catch (e: SecurityException) {
             PlayerSnapshot.playback = "Нет доступа к медиасессиям"
