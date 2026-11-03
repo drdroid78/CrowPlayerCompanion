@@ -77,6 +77,8 @@ class MusicNotificationListener : NotificationListenerService() {
             else -> "paused"
         }
         PlayerSnapshot.artwork = artwork
+        PlayerSnapshot.positionMs = (controller.playbackState?.position ?: 0L).coerceAtLeast(0L)
+        PlayerSnapshot.durationMs = (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L).coerceAtLeast(0L)
         PlayerSnapshot.lastUpdated = System.currentTimeMillis()
     }
 }

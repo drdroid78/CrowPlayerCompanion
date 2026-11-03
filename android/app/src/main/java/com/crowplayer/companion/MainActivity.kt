@@ -20,6 +20,8 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
 
 /** Škoda-inspired dark/emerald companion UI. Media metadata remains supplied by MediaSession. */
@@ -76,7 +78,7 @@ class MainActivity : Activity() {
         brand.addView(label("ŠKODA  /  CROWPLAYER", 15f, Color.WHITE, true, Gravity.START))
         brand.addView(label("MUSIC COMPANION", 10f, emerald, true, Gravity.START))
         header.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(label("0.3.0", 11f, muted, true))
+        header.addView(label("0.4.0", 11f, muted, true))
         content.addView(header)
 
         val statusRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -134,12 +136,41 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(12) })
         settingsCard.addView(actionButton("ОБНОВИТЬ ДАННЫЕ", false) { renderSnapshot() },
             LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+        val nightSwitch = Switch(this).apply {
+            text = "Ночной режим дисплея"
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(12), 0, dp(8))
+            setOnCheckedChangeListener { _, checked -> ble.setNightMode(checked) }
+        }
+        settingsCard.addView(nightSwitch)
+        settingsCard.addView(label("ЯРКОСТЬ ЭКРАНА", 10f, muted, true, Gravity.START))
+        val screenSeek = SeekBar(this).apply {
+            max = 95; progress = 70
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) ble.setScreenBrightness(progress + 5) }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        settingsCard.addView(screenSeek, LinearLayout.LayoutParams(-1, dp(38)))
+        settingsCard.addView(label("ЯРКОСТЬ ЗЕЛЁНОЙ ПОДСВЕТКИ", 10f, muted, true, Gravity.START))
+        val ledSeek = SeekBar(this).apply {
+            max = 100; progress = 42
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) ble.setLedBrightness(progress) }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        settingsCard.addView(ledSeek, LinearLayout.LayoutParams(-1, dp(38)))
         content.addView(settingsCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
 
         source = label("Источник: ожидаем Яндекс Музыку", 10f, muted)
         content.addView(source, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
         content.addView(label("Оставь приложение открытым во время первого теста связи с CrowPanel.", 11f, muted),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
+        content.addView(label("CrowPlayer Škoda Edition  •  Автор: DrDroid78", 10f, muted),
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
     }
@@ -200,6 +231,6 @@ class MainActivity : Activity() {
         val placeholder = art.tag as? View
         if (bitmap != null) { art.setImageBitmap(bitmap); placeholder?.visibility = View.GONE }
         else { art.setImageDrawable(null); placeholder?.visibility = View.VISIBLE }
-        ble.send(PlayerSnapshot.title, PlayerSnapshot.artist, PlayerSnapshot.playback)
+        ble.send(PlayerSnapshot.title, PlayerSnapshot.artist, PlayerSnapshot.playback, PlayerSnapshot.positionMs, PlayerSnapshot.durationMs)
     }
 }

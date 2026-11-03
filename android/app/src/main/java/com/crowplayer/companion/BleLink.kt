@@ -30,6 +30,9 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
     private var writeInFlight = false
     private var latestPayload = ""
     private var sentPayload = ""
+    @Volatile private var nightMode = false
+    @Volatile private var screenBrightness = 75
+    @Volatile private var ledBrightness = 42
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
@@ -126,12 +129,21 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
         scanning = false
     }
 
-    fun send(title: String, artist: String, playback: String) {
+    fun setNightMode(enabled: Boolean) { nightMode = enabled; sentPayload = ""; flushLatest() }
+    fun setScreenBrightness(value: Int) { screenBrightness = value.coerceIn(5, 100); sentPayload = ""; flushLatest() }
+    fun setLedBrightness(value: Int) { ledBrightness = value.coerceIn(0, 100); sentPayload = ""; flushLatest() }
+
+    fun send(title: String, artist: String, playback: String, positionMs: Long = 0L, durationMs: Long = 0L) {
         val state = if (playback.equals("playing", true) || playback.contains("Воспроизводится", true)) "playing" else "paused"
         latestPayload = JSONObject()
             .put("title", title.take(64))
             .put("artist", artist.take(64))
             .put("state", state)
+            .put("positionMs", positionMs.coerceAtLeast(0L))
+            .put("durationMs", durationMs.coerceAtLeast(0L))
+            .put("nightMode", nightMode)
+            .put("screenBrightness", screenBrightness)
+            .put("ledBrightness", ledBrightness)
             .toString()
         flushLatest()
     }

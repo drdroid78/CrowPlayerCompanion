@@ -1,4 +1,5 @@
 /*
+ * Project author: DrDroid78
  * CrowPlayer for Elecrow CrowPanel 1.28-inch HMI ESP32-S3 rotary display.
  * BLE HID media remote + BLE GATT metadata receiver for CrowPlayer Companion.
  *
@@ -14,6 +15,7 @@
 #include <HijelHID_BLEKeyboard.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
+#include "skoda_splash.h"
 
 static constexpr int PIN_LCD_SCLK=10, PIN_LCD_MOSI=11, PIN_LCD_DC=3;
 static constexpr int PIN_LCD_CS=9, PIN_LCD_RST=14, PIN_LCD_BL=46;
@@ -54,6 +56,9 @@ String trackTitle="Waiting for music";
 String trackArtist="Open Yandex Music";
 String playback="paused";
 int volumeEstimate=50; // Estimate only; system volume is not readable over HID.
+uint32_t trackPositionMs=0, trackDurationMs=0, lastProgressDraw=0, positionReceivedAt=0;
+bool nightMode=false;
+uint8_t screenBrightness=75, ledBrightness=42;
 int lastA=HIGH;
 bool lastButton=HIGH;
 uint32_t buttonDownAt=0, lastClickAt=0;
@@ -73,6 +78,13 @@ class MetaCallbacks : public NimBLECharacteristicCallbacks {
     trackTitle=String(t).substring(0,64);
     trackArtist=String(a).substring(0,64);
     playback=String(s);
+    trackPositionMs=doc["positionMs"] | 0UL;
+    trackDurationMs=doc["durationMs"] | 0UL;
+    positionReceivedAt=millis();
+    nightMode=doc["nightMode"] | false;
+    screenBrightness=constrain((int)(doc["screenBrightness"] | 75),5,100);
+    ledBrightness=constrain((int)(doc["ledBrightness"] | 42),0,100);
+    accentLeds.setBrightness((uint8_t)(ledBrightness*255/100)); accentLeds.show();
     screenDirty=true;
   }
 };
@@ -92,27 +104,10 @@ void setAccentLighting() {
   accentLeds.show();
 }
 
-// Startup splash: custom stylized winged-arrow mark, not an official logo asset.
+// Startup splash: circular CrowPlayer Škoda artwork, rendered full-screen.
 void drawStartupSplash() {
   lcd.fillScreen(TFT_BLACK);
-  const uint16_t green=0x05A8; // deep emerald on RGB565 display
-  lcd.drawCircle(120,103,66,green);
-  lcd.drawCircle(120,103,61,0x2E66);
-  // Stylized winged arrow inside the circular badge.
-  lcd.fillTriangle(73,104,112,86,108,101,green);
-  lcd.fillTriangle(73,104,108,105,112,119,green);
-  lcd.fillTriangle(108,86,157,94,143,103,green);
-  lcd.fillTriangle(108,105,143,105,157,114,green);
-  lcd.fillTriangle(143,94,166,82,158,105,green);
-  lcd.fillTriangle(143,105,158,105,166,126,green);
-  lcd.fillTriangle(112,96,151,100,130,108,0xDFFF);
-  lcd.fillTriangle(112,110,151,106,130,100,0xDFFF);
-  lcd.fillCircle(130,104,5,green);
-  lcd.setTextDatum(textdatum_t::middle_center);
-  lcd.setTextColor(green,TFT_BLACK); lcd.setTextSize(2);
-  lcd.drawString("SKODA",120,187);
-  lcd.setTextColor(0xBDF7,TFT_BLACK); lcd.setTextSize(1);
-  lcd.drawString("CROWPLAYER",120,210);
+  lcd.pushImage(0, 0, 240, 240, SKODA_SPLASH_RGB565);
   delay(2200);
 }
 
@@ -141,7 +136,13 @@ void drawPlayer() {
   drawCentered(title,132,1,TFT_WHITE);
   drawCentered(artist,151,1,0xBDF7);
   lcd.drawRoundRect(48,168,144,4,2,0x4208);
-  lcd.fillRoundRect(48,168,72,4,2,0xF02D); // Decorative until position data is added.
+  uint32_t shownPosition=trackPositionMs;
+  if(playback=="playing" && trackDurationMs>0) shownPosition=min(trackDurationMs,trackPositionMs+(millis()-positionReceivedAt));
+  int progressWidth = trackDurationMs > 0 ? (int)(144UL * min(shownPosition,trackDurationMs) / trackDurationMs) : 0;
+  if(progressWidth>0) lcd.fillRoundRect(48,168,progressWidth,4,2,0xF02D);
+  uint32_t elapsed=shownPosition/1000, total=trackDurationMs/1000;
+  char timeText[24]; snprintf(timeText,sizeof(timeText),"%lu:%02lu / %lu:%02lu",elapsed/60,elapsed%60,total/60,total%60);
+  lcd.setTextDatum(textdatum_t::middle_center); lcd.setTextSize(1); lcd.setTextColor(0x7BEF,TFT_BLACK); lcd.drawString(timeText,120,180);
   lcd.fillTriangle(70,199,82,191,82,207,0xF02D); lcd.fillRect(86,191,3,16,0xF02D);
   if(playback=="playing") {
     lcd.fillRect(111,190,5,18,TFT_WHITE); lcd.fillRect(122,190,5,18,TFT_WHITE);
@@ -149,7 +150,9 @@ void drawPlayer() {
     lcd.fillTriangle(111,189,111,209,130,199,TFT_WHITE);
   }
   lcd.fillTriangle(170,199,158,191,158,207,0xF02D); lcd.fillRect(154,191,3,16,0xF02D);
-  lcd.drawArc(120,120,116,111,220,320,0xF02D,0xF02D);
+  lcd.drawArc(120,120,116,111,220,320,0x4208,0x4208);
+  int volEnd=220+(int)(100*volumeEstimate/100);
+  if(volEnd>220) lcd.drawArc(120,120,116,111,220,volEnd,0xF02D,0xF02D);
   drawCentered(String("VOL ")+volumeEstimate+"%",226,1,0xF02D);
   lcd.setTextDatum(textdatum_t::top_center); lcd.setTextSize(1);
   lcd.setTextColor(0x7BEF,TFT_BLACK); lcd.drawString("CROWPLAYER",120,8);
@@ -162,7 +165,7 @@ void sendMedia(uint16_t key) {
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_POWER_GATE,OUTPUT); digitalWrite(PIN_POWER_GATE,HIGH);
-  pinMode(PIN_LCD_BL,OUTPUT); digitalWrite(PIN_LCD_BL,HIGH);
+  ledcAttach(PIN_LCD_BL,5000,8); ledcWrite(PIN_LCD_BL,255);
   setAccentLighting();
   pinMode(PIN_ENC_A,INPUT_PULLUP); pinMode(PIN_ENC_B,INPUT_PULLUP);
   pinMode(PIN_ENC_SW,INPUT_PULLUP); lastA=digitalRead(PIN_ENC_A);
@@ -230,9 +233,12 @@ void loop() {
 
   bool paired=keyboard.isPaired();
   if(paired!=lastPaired) { lastPaired=paired; screenDirty=true; }
-  if(screenDirty) {
+  if(screenDirty || (paired && millis()-lastProgressDraw>=1000)) {
     if(paired) drawPlayer(); else drawPairing();
-    screenDirty=false;
+    screenDirty=false; lastProgressDraw=millis();
   }
+  uint8_t targetBrightness=(uint8_t)(screenBrightness*255/100);
+  if(nightMode) targetBrightness=min(targetBrightness,(uint8_t)18);
+  ledcWrite(PIN_LCD_BL,targetBrightness);
   delay(3);
 }
