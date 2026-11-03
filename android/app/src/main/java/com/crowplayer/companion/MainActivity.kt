@@ -115,9 +115,12 @@ class MainActivity : Activity() {
         playerCard.addView(artist, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
 
         val playbackRow = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
-        playback = label("ОЖИДАНИЕ", 10f, emerald, true)
-        playbackRow.addView(playback, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
-        playerCard.addView(playbackRow)
+        playback = label("ОЖИДАНИЕ", 9f, emerald, true).apply {
+            isSingleLine = true
+            includeFontPadding = false
+        }
+        playbackRow.addView(playback, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        playerCard.addView(playbackRow, LinearLayout.LayoutParams(-1, -2))
         trackSeekBar = SeekBar(this).apply {
             max = 1000
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
