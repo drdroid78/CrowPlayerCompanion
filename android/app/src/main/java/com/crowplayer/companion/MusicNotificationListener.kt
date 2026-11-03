@@ -32,8 +32,6 @@ class MusicNotificationListener : NotificationListenerService() {
         @Synchronized
         fun toggleLike(): Boolean {
             val controller = activeController ?: return false
-            if ((controller.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SET_RATING == 0L) return false
-
             val metadata = controller.metadata
             val trackKey = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
                 ?.takeIf { it.isNotBlank() }
@@ -49,12 +47,16 @@ class MusicNotificationListener : NotificationListenerService() {
             // Keep the requested state locally because some media sessions update metadata
             // asynchronously (or do not echo the new rating back at all).
             optimisticLikes[trackKey] = nextLiked
-            if (optimisticLikes.size > 100) optimisticLikes.clear()
             // Send an explicit heart=false rating to remove the like. An unrated
             // value is often ignored by media-session providers such as Yandex Music.
-            val requestedRating = android.media.Rating.newHeartRating(nextLiked)
-            controller.transportControls.setRating(requestedRating)
-            return true
+            return try {
+                controller.transportControls.setRating(android.media.Rating.newHeartRating(nextLiked))
+                true
+            } catch (e: Exception) {
+                Log.w("CrowPlayer", "Could not send heart rating", e)
+                optimisticLikes[trackKey] = currentLiked
+                false
+            }
         }
     }
     private val handler = Handler(Looper.getMainLooper())
