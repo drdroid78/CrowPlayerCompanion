@@ -82,7 +82,7 @@ class MainActivity : Activity() {
         brand.addView(label("ŠKODA  /  CROWPLAYER", 15f, Color.WHITE, true, Gravity.START))
         brand.addView(label("MUSIC COMPANION", 10f, emerald, true, Gravity.START))
         header.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(label("0.5.0", 11f, muted, true))
+        header.addView(label("0.6.0", 11f, muted, true))
         content.addView(header)
 
         val statusRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
