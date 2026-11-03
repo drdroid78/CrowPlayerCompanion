@@ -1,0 +1,326 @@
+Протокол UART усилителя Hellion HAM8.100DSP
+Рабочее описание протокола обмена между DRC-2/головным устройством и усилителем Hellion HAM8.100DSP.
+Основано на:
+UART-захватах `snif\*.csv`, особенно `snif6.csv`;
+статическом анализе официальной программы `HAM8.100DSP\_v6.8.8.mcu\_v1.27\_2024\_1108\_v2.exe`.
+Это не официальная документация производителя. Бинарник содержит общую библиотеку для нескольких моделей Hellion, поэтому наличие имени в программе не означает наличие физического входа у HAM8.100DSP.
+UART
+HLA получает байты от Saleae Logic 2 `Async Serial`.
+```text
+baud rate: 115200
+data bits: 8
+parity: none
+stop bits: 1
+bit order: LSB first
+signal: inverted
+```
+Формат пакета
+```text
+AA 77 LEN GROUP COMMAND TYPE DATA... CHECKSUM
+```
+Правило длины:
+```text
+total\_packet\_size = LEN + 4
+```
+Правило checksum:
+```text
+sum(packet\[2:]) \& 0xFF == 0
+```
+Операции
+Type	Внутреннее имя HLA	Короткое имя	Семантика
+`66`	`READ\_REQUEST`	`GET`	запрос параметра
+`DD`	`READ\_RESPONSE`	`VALUE\_REPORT`	значение параметра или сообщение усилителя
+`BB`	`WRITE\_REQUEST`	`SET`	установка параметра
+`EE`	`WRITE\_RESPONSE`	`ACK`	подтверждение записи
+`DD` лучше понимать как `VALUE\_REPORT`, потому что пакет может быть не только ответом на `GET`, но и инициативным сообщением усилителя.
+ACK
+Статический анализ программы подтвердил проверку:
+```text
+operation == EE
+data\[0] == 0A
+```
+и состояние `ACK\_READY`.
+Следовательно:
+```text
+EE 0A = успешное подтверждение операции
+```
+Пример:
+```text
+AA 77 04 01 02 EE 0A 01
+```
+Декодирование:
+```text
+ACK MAIN\_VOLUME SUCCESS
+```
+Другие значения статуса пока отображаются как `UNKNOWN\_XX`, а не как доказанная ошибка.
+Карта команд
+Адрес	Название	GET/VALUE_REPORT	SET	Уверенность
+`01:00`	`SOURCE\_CONFIG`	список доступных источников	неизвестно	высокая
+`01:01`	`SOURCE\_SWITCH`	текущий источник + `secondary`	выбор источника	высокая
+`01:02`	`MAIN\_VOLUME`	`int8(raw) + 60`	`0x42 - raw`	высокая
+`01:03`	`SUBWOOFER\_VOLUME`	`int8(raw)`	`-raw`	высокая
+`01:04`	`MUTE`	`00=OFF`, `01=ON`	`00=OFF`, `01=ON`	высокая
+`02:0E`	`AMPLIFIER\_CONFIGURATION`	raw value	неизвестно	средняя
+`02:0F`	`AMPLIFIER\_CONFIGURATION\_MASK`	prefix/mask	неизвестно	средняя
+`05:80`	`POWER\_OR\_ACC\_STATE`	raw payload	неизвестно	низкая
+`05:82`	`MCU\_STATUS\_OR\_CONFIG\_BLOCK`	raw block, all-zero detection	неизвестно	средняя
+Startup-последовательность
+Наблюдаемая последовательность при запуске:
+Шаг	Запрос	Ответ
+1	`GET 01:00 SOURCE\_CONFIG`	доступные источники
+2	`GET 01:04 MUTE`	`MUTE OFF`
+3	`GET 01:02 MAIN\_VOLUME`	сохраненная основная громкость
+4	`GET 01:03 SUBWOOFER\_VOLUME`	громкость сабвуфера
+5	`GET 01:01 SOURCE\_SWITCH`	текущий источник
+6	`GET 02:0E AMPLIFIER\_CONFIGURATION`	`08` у HAM8.100DSP, `02` у DHL-10
+7	`GET 02:0F AMPLIFIER\_CONFIGURATION\_MASK`	`00 FF` у HAM8.100DSP, `00 03` у DHL-10
+8	`GET 05:82 MCU\_STATUS\_OR\_CONFIG\_BLOCK`	17 нулевых байт
+SOURCE_CONFIG
+Адрес:
+```text
+GROUP   = 01
+COMMAND = 00
+```
+Наблюдаемый payload HAM8.100DSP:
+```text
+05 00 04 05 02 06
+```
+Формат подтвержден бинарником:
+```text
+DATA\[0] = количество доступных источников
+DATA\[1...] = внутренние source ID
+```
+Для HAM8.100DSP:
+Source ID	Источник
+`00`	`OPT`
+`04`	`LOW`
+`05`	`HIGH`
+`02`	`BT`
+`06`	`USB`
+Декодирование:
+```text
+SOURCE\_CONFIG: 5 sources \[OPT, LOW, HIGH, BT, USB]
+```
+Важно: это реальный список возможностей конкретного усилителя. Только он определяет, что доступно у HAM8.100DSP.
+DHL-10 сообщает другой список:
+```text
+AA 77 0B 01 00 DD 06 05 02 07 06 00 03 00 FA
+```
+Payload:
+```text
+06 05 02 07 06 00 03 00
+```
+Разбор:
+```text
+count = 06
+source\_ids = 05 02 07 06 00 03
+sources = HIGH, BT, UDP, USB, OPT, AUX
+extra = 00
+```
+Формат `SOURCE\_CONFIG` допускает опциональный хвост:
+```python
+count = payload\[0]
+source\_ids = payload\[1:1 + count]
+extra = payload\[1 + count:]
+```
+Если payload короче `1 + count`, пакет помечается как `source\_config\_truncated=True`. Если payload длиннее, хвост сохраняется как `source\_config\_extra` и не считается ошибкой.
+Общая библиотека источников Hellion
+В бинарнике есть общий enum источников:
+Source ID	Library name	Wire code
+`00`	`OPT`	`51`
+`01`	`COAX`	`52`
+`02`	`BT`	`53`
+`03`	`AUX`	`54`
+`04`	`LOW`	`55`
+`05`	`HIGH`	`56`
+`06`	`DMP/USB`	`57`
+`07`	`UDP`	`58`
+`08`	`SCP`	`59`
+Правило wire-кода:
+```text
+wire\_code = 0x51 + source\_id
+```
+COAX, AUX, UDP и SCP не объявлены в `SOURCE\_CONFIG` HAM8.100DSP, поэтому их нельзя показывать как физически доступные входы этого усилителя. Снифер может знать их имена для декодирования пакетов других моделей или неожиданных сообщений.
+Если приходит известный library ID, которого нет в текущем `SOURCE\_CONFIG`, это отображается как `advertised=no`, а не как ошибка.
+SOURCE_SWITCH
+Адрес:
+```text
+GROUP   = 01
+COMMAND = 01
+```
+`SET`:
+```text
+DATA\[0] = wire source code
+```
+Примеры:
+Пакет	Значение
+`AA 77 04 01 01 BB 51 EE`	`SET SOURCE OPT`
+`AA 77 04 01 01 BB 53 EC`	`SET SOURCE BT`
+`AA 77 04 01 01 BB 56 E9`	`SET SOURCE HIGH`
+`VALUE\_REPORT` имеет переменную длину:
+```text
+DATA\[0] = wire source code
+DATA\[1:] = optional source extra
+```
+Пример:
+```text
+56 00 = HIGH, secondary=00
+53 = BT
+```
+`secondary\_raw` сохраняется как совместимое имя для первого байта `source\_extra`, если он есть. У DHL-10 ответ может содержать только один байт source code. `secondary` пока не расшифрован.
+Bluetooth и fallback на HIGH
+В захвате есть:
+```text
+SET SOURCE BT, wire=53
+```
+а при следующем startup:
+```text
+VALUE\_REPORT SOURCE HIGH, payload=56 00
+```
+BT и HIGH оба объявлены в `SOURCE\_CONFIG`, поэтому это не связано с отсутствием BT в списке возможностей устройства.
+Рабочие гипотезы:
+Bluetooth не был подключен или готов, поэтому усилитель сделал fallback на HIGH.
+BT не сохраняется после выключения питания.
+Startup возвращает фактически активный источник.
+Прошивка переключается на резервный источник при отсутствии Bluetooth-потока.
+Второй байт `secondary` содержит дополнительное состояние.
+Ни одна гипотеза пока не доказана.
+MAIN_VOLUME
+Адрес:
+```text
+GROUP   = 01
+COMMAND = 02
+```
+`SET` от DRC-2:
+```text
+volume = 0x42 - raw
+```
+`VALUE\_REPORT` от усилителя:
+```text
+volume = int8(raw) + 60
+```
+Примеры `VALUE\_REPORT`:
+Volume	Raw	Signed
+15	`D3`	-45
+25	`DD`	-35
+30	`E2`	-30
+35	`E7`	-25
+55	`FB`	-5
+SUBWOOFER_VOLUME
+Адрес:
+```text
+GROUP   = 01
+COMMAND = 03
+```
+Бинарник подтвердил `DSP\_SUBWOOFER\_VOLUME`.
+Декодирование `VALUE\_REPORT`:
+```text
+subwoofer\_volume = int8(raw)
+```
+Декодирование `SET`:
+```text
+subwoofer\_volume = -raw
+```
+Пример:
+```text
+AA 77 04 01 03 DD E7 34
+```
+```text
+SUBWOOFER\_VOLUME = -25
+```
+Пример SET:
+```text
+AA 77 04 01 03 BB 08 35 -> SET SUBWOOFER\_VOLUME -8
+```
+Единица измерения, вероятно, dB, но в основном выводе HLA она не утверждается.
+MUTE
+Адрес:
+```text
+GROUP   = 01
+COMMAND = 04
+```
+Raw	Значение
+`00`	`OFF`
+`01`	`ON`
+02:0E AMPLIFIER_CONFIGURATION
+Наблюдаемые ответы:
+```text
+AA 77 04 02 0E DD 08 07
+AA 77 04 02 0E DD 02 0D
+```
+`value=08` у HAM8.100DSP и `value=02` у DHL-10. Поэтому значение нельзя подписывать как количество каналов. Текущая осторожная подпись: `AMPLIFIER\_CONFIGURATION = XX`.
+02:0F AMPLIFIER_CONFIGURATION_MASK
+Наблюдаемые ответы:
+```text
+AA 77 05 02 0F DD 00 FF 0E
+AA 77 05 02 0F DD 00 03 0A
+```
+Payload:
+```text
+00 FF
+00 03
+```
+Декодер показывает:
+```text
+AMPLIFIER\_CONFIGURATION\_MASK prefix=00 mask=FF
+AMPLIFIER\_CONFIGURATION\_MASK prefix=00 mask=03
+```
+Семантика пока не подтверждена. Второй байт похож на configuration mask, но это не выводится как установленный факт.
+05:80 POWER_OR_ACC_STATE
+Наблюдаемый пакет:
+```text
+AA 77 05 05 80 DD 01 00 98
+```
+Payload:
+```text
+01 00
+```
+Может быть связан с питанием, ACC, standby или инициативным статусом MCU. Уверенность низкая.
+05:82 MCU_STATUS_OR_CONFIG_BLOCK
+Наблюдаемый ответ:
+```text
+AA 77 14 05 82 DD
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00
+88
+```
+Payload length: 17 bytes. В `snif6.csv` payload полностью нулевой.
+Подтверждено UART-захватом и бинарником
+```text
+01:00 SOURCE\_CONFIG
+01:01 SOURCE\_SWITCH
+01:02 MAIN\_VOLUME
+01:03 SUBWOOFER\_VOLUME
+01:04 MUTE
+
+66 GET
+DD VALUE\_REPORT
+BB SET
+EE ACK
+
+EE 0A = successful ACK
+
+SOURCE\_CONFIG:
+first byte = source count
+following bytes = internal source IDs
+optional trailing bytes may follow the advertised source list
+```
+Остается гипотезой
+```text
+Точный смысл secondary в SOURCE\_SWITCH VALUE\_REPORT.
+Почему после SET SOURCE BT startup возвращает HIGH.
+Смысл 02:0E value=08 у HAM8.100DSP и value=02 у DHL-10.
+Смысл 02:0F payload=00 FF у HAM8.100DSP и payload=00 03 у DHL-10.
+Точная семантика 05:80 payload=01 00.
+Смысл ненулевых байтов 05:82.
+Существуют ли другие коды ACK кроме 0A.
+```
+HAM8.100DSP vs DHL-10
+Команда	HAM8.100DSP	DHL-10
+`SOURCE\_CONFIG`	`OPT, LOW, HIGH, BT, USB`	`HIGH, BT, UDP, USB, OPT, AUX`
+`SOURCE\_SWITCH response`	source + optional `00`	source only
+`02:0E`	`08`	`02`
+`02:0F`	`00 FF`	`00 03`
+`05:82`	17 zero bytes	17 zero bytes
+`05:80`	`01 00`	`01 00`
