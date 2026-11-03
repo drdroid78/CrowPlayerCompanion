@@ -42,6 +42,7 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
     @Volatile private var nightMode = false
     @Volatile private var screenBrightness = 75
     @Volatile private var ledBrightness = 42
+    @Volatile private var encoderSeek = false
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
@@ -145,6 +146,7 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
     fun setNightMode(enabled: Boolean) { nightMode = enabled; sentPayload = ""; flushLatest() }
     fun setScreenBrightness(value: Int) { screenBrightness = value.coerceIn(5, 100); sentPayload = ""; flushLatest() }
     fun setLedBrightness(value: Int) { ledBrightness = value.coerceIn(0, 100); sentPayload = ""; flushLatest() }
+    fun setEncoderSeek(enabled: Boolean) { encoderSeek = enabled; sentPayload = ""; flushLatest() }
 
     fun sendArtwork(bitmap: Bitmap?) {
         if (bitmap == null) return
@@ -210,6 +212,7 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
             .put("nightMode", nightMode)
             .put("screenBrightness", screenBrightness)
             .put("ledBrightness", ledBrightness)
+            .put("encoderSeek", encoderSeek)
             .put("epochMs", System.currentTimeMillis())
             .put("autoNight", true)
             .toString()
