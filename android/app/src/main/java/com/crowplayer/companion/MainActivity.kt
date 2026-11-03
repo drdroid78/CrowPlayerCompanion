@@ -145,7 +145,7 @@ class MainActivity : Activity() {
         }
         playerCard.addView(trackSeekBar, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(4) })
         playerCard.addView(actionButton("♡  ЛАЙК / УБРАТЬ ИЗ ИЗБРАННОГО", false) {
-            status.text = if (MusicNotificationListener.toggleLike()) "КОМАНДА ОТПРАВЛЕНА" else "ПЛЕЕР НЕ ПРЕДОСТАВЛЯЕТ ДЕЙСТВИЕ ЛАЙКА"
+            status.text = if (MusicNotificationListener.toggleLike { ok -> status.text = if (ok) "КОМАНДА ОТПРАВЛЕНА" else "НЕ УДАЛОСЬ ОТПРАВИТЬ КОМАНДУ" }; "ОТПРАВКА КОМАНДЫ…"
         }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
         content.addView(playerCard, LinearLayout.LayoutParams(-1, -2))
 
@@ -295,7 +295,7 @@ class MainActivity : Activity() {
         trackTitle.text = PlayerSnapshot.title
         artist.text = if (PlayerSnapshot.album.isNotBlank()) "${PlayerSnapshot.artist}  ·  ${PlayerSnapshot.album}" else PlayerSnapshot.artist
         val playing = PlayerSnapshot.playback.equals("playing", true)
-        playback.text = if (playing) "●  ВОСПРОИЗВЕДЕНИЕ" else "Ⅱ  ПАУЗА / ОЖИДАНИЕ"
+        playback.text = if (playing) "●  ВОСПРОИЗВЕДЕНИЕ" else "Ⅱ  ПАУЗА"
         playback.setTextColor(if (playing) emerald else muted)
         source.text = if (PlayerSnapshot.packageName.isNotBlank()) "Источник: ${PlayerSnapshot.packageName}" else "Источник не определён"
         val bitmap: Bitmap? = PlayerSnapshot.artwork
