@@ -33,8 +33,18 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
-        run: gradle -p android :app:assembleDebug
+      - name: Test and build debug APK
+        run: gradle -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrowPlayer-check-reports
+          path: |
+            android/app/build/reports/tests/testDebugUnitTest/
+            android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

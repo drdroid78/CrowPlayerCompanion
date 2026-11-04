@@ -11,8 +11,8 @@ android {
         applicationId = "com.crowplayer.companion"
         minSdk = 26
         targetSdk = 32
-        versionCode = 8
-        versionName = "0.6.0"
+        versionCode = 9
+        versionName = "0.6.1"
     }
 
     compileOptions {
@@ -20,4 +20,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    buildFeatures { buildConfig = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.mockito:mockito-core:5.14.2")
 }

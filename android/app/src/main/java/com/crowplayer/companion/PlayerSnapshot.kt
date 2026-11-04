@@ -18,6 +18,9 @@ object PlayerSnapshot {
     @Volatile var durationMs: Long = 0L
     @Volatile var lastUpdated: Long = 0L
     @Volatile var isLiked: Boolean = false
+    @Volatile var likeStateKnown: Boolean = false
+    @Volatile var likeAvailable: Boolean = false
+    @Volatile var likeDiagnostics: String = "Медиасессия не найдена. Включи доступ к уведомлениям и запусти музыку."
 
     fun clear() {
         title = "Нет данных о треке"
@@ -30,5 +33,8 @@ object PlayerSnapshot {
         durationMs = 0L
         lastUpdated = System.currentTimeMillis()
         isLiked = false
+        likeStateKnown = false
+        likeAvailable = false
+        likeDiagnostics = "Медиасессия не найдена. Включи доступ к уведомлениям и запусти музыку."
     }
 }

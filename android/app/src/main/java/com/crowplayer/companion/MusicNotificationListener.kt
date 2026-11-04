@@ -1,24 +1,37 @@
 package com.crowplayer.companion
 
+import android.app.Notification
 import android.content.ComponentName
 import android.media.MediaMetadata
 import android.media.Rating
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 import android.util.Log
 import java.util.concurrent.Executors
 
-/** Reads the active Android media session exposed by Yandex Music / HarmonyOS. */
+/** Reads the player and uses only commands actually exposed by its current session. */
 class MusicNotificationListener : NotificationListenerService() {
+    enum class LikeResult(val message: String) {
+        CONFIRMED("Избранное обновлено"),
+        UNAVAILABLE("Плеер не предоставил команду избранного. Открой диагностику плеера в настройках ниже."),
+        UNCONFIRMED("Команда отправлена, но плеер не подтвердил изменение избранного"),
+        TRACK_CHANGED("Трек сменился. Повтори действие для нового трека."),
+        DISCONNECTED("Нет доступа к плееру. Проверь доступ к уведомлениям."),
+        FAILED("Не удалось отправить команду избранного"),
+        BUSY("Дождись подтверждения предыдущей команды")
+    }
+
     companion object {
         @Volatile var activeController: MediaController? = null
             private set
-        // MediaSession Binder calls run off the UI thread. A cached pool prevents
-        // one stalled vendor/Yandex session call from blocking every later command.
+        @Volatile private var listener: MusicNotificationListener? = null
         private val commandExecutor = Executors.newCachedThreadPool()
         private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -43,83 +56,211 @@ class MusicNotificationListener : NotificationListenerService() {
             return true
         }
 
-        /**
-         * Sends a heart rating only when the active session advertises SET_RATING.
-         * The UI is updated only after the session reports the requested user rating
-         * back through MediaMetadata; a successful Binder call alone is not confirmation.
-         */
-        fun toggleLike(onResult: (Boolean) -> Unit) {
-            val controller = activeController
-            if (controller == null) { mainHandler.post { onResult(false) }; return }
-            val metadata = controller.metadata
-            val currentRating = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
-            val actions = controller.playbackState?.actions ?: 0L
-            if (currentRating == null ||
-                currentRating.ratingStyle != Rating.RATING_HEART ||
-                actions and PlaybackState.ACTION_SET_RATING == 0L) {
-                mainHandler.post { onResult(false) }
-                return
-            }
-
-            val desired = !currentRating.hasHeart()
-            val packageName = controller.packageName
-            commandExecutor.execute {
-                try {
-                    val target = activeController
-                    if (target == null || target.packageName != packageName) {
-                        mainHandler.post { onResult(false) }
-                        return@execute
-                    }
-                    target.transportControls.setRating(Rating.newHeartRating(desired))
-                    // Wait for metadata confirmation; do not fabricate a local liked state.
-                    var attempt = 0
-                    val verify = object : Runnable {
-                        override fun run() {
-                            val fresh = activeController
-                            val rating = if (fresh?.packageName == packageName)
-                                fresh.metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
-                            else null
-                            if (rating?.ratingStyle == Rating.RATING_HEART && rating.hasHeart() == desired) {
-                                PlayerSnapshot.isLiked = desired
-                                onResult(true)
-                            } else if (++attempt < 6) {
-                                mainHandler.postDelayed(this, 350L)
-                            } else {
-                                PlayerSnapshot.isLiked = currentRating.hasHeart()
-                                onResult(false)
-                            }
-                        }
-                    }
-                    mainHandler.postDelayed(verify, 350L)
-                } catch (e: Exception) {
-                    Log.w("CrowPlayer", "Could not send heart rating", e)
-                    mainHandler.post { PlayerSnapshot.isLiked = currentRating.hasHeart(); onResult(false) }
-                }
+        fun toggleLike(onResult: (LikeResult) -> Unit) {
+            mainHandler.post {
+                val service = listener
+                if (service == null) onResult(LikeResult.DISCONNECTED)
+                else service.requestLike(onResult)
             }
         }
-
     }
 
+    private data class LikeCommand(val direction: LikeActionPolicy.Direction, val send: () -> Unit)
+    private data class LikeSupport(val state: Boolean?, val commands: List<LikeCommand>, val report: String) {
+        fun command(): LikeCommand? = LikeActionPolicy.choose(commands.map { it.direction }, state)?.let { commands[it] }
+    }
+    private class LikeRequest(
+        val token: MediaSession.Token,
+        val track: LikeActionPolicy.Track,
+        val desired: Boolean,
+        val callback: (LikeResult) -> Unit,
+        val startedAt: Long = SystemClock.elapsedRealtime(),
+        var sent: Boolean = false
+    )
+
     private val handler = Handler(Looper.getMainLooper())
+    private val notifications = mutableMapOf<String, StatusBarNotification>()
+    @Volatile private var pendingLike: LikeRequest? = null
     private val poll = object : Runnable {
         override fun run() { updateSnapshot(); handler.postDelayed(this, 1000L) }
+    }
+    private val verifyLike = object : Runnable {
+        override fun run() {
+            val request = pendingLike ?: return
+            try {
+                val controller = activeController
+                when {
+                    controller == null -> finishLike(request, LikeResult.DISCONNECTED)
+                    !matches(request, controller) -> finishLike(request, LikeResult.TRACK_CHANGED)
+                    request.sent && likeSupport(controller).state == request.desired -> {
+                        applyController(controller)
+                        finishLike(request, LikeResult.CONFIRMED)
+                    }
+                    SystemClock.elapsedRealtime() - request.startedAt >= 5000L ->
+                        finishLike(request, LikeResult.UNCONFIRMED)
+                    else -> handler.postDelayed(this, 250L)
+                }
+            } catch (e: Exception) {
+                Log.w("CrowPlayer", "Could not confirm favourite", e)
+                finishLike(request, LikeResult.FAILED)
+            }
+        }
     }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        listener = this
+        notifications.clear()
+        activeNotifications?.forEach { remember(it) }
         handler.removeCallbacks(poll)
         handler.post(poll)
     }
 
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (remember(sbn)) updateSnapshot()
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (notifications.remove(sbn.key) != null) updateSnapshot()
+    }
+
+    private fun remember(sbn: StatusBarNotification): Boolean {
+        if (!sbn.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION))
+            return notifications.remove(sbn.key) != null
+        notifications[sbn.key] = sbn
+        return true
+    }
+
     override fun onListenerDisconnected() {
-        handler.removeCallbacks(poll)
-        activeController = null
+        disconnect()
         super.onListenerDisconnected()
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(poll)
+        disconnect()
         super.onDestroy()
+    }
+
+    private fun disconnect() {
+        handler.removeCallbacksAndMessages(null)
+        pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
+        notifications.clear()
+        if (listener === this) {
+            listener = null
+            activeController = null
+            PlayerSnapshot.clear()
+        }
+    }
+
+    private fun track(controller: MediaController): LikeActionPolicy.Track {
+        val metadata = controller.metadata
+        return LikeActionPolicy.Track(
+            metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID),
+            metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                ?: metadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
+            metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST),
+            metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        )
+    }
+
+    private fun matches(request: LikeRequest, controller: MediaController): Boolean =
+        controller.sessionToken == request.token && track(controller) == request.track
+
+    @Suppress("DEPRECATION")
+    private fun likeSupport(controller: MediaController): LikeSupport {
+        val metadata = controller.metadata
+        val rating = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
+        val ratedHeart = rating?.takeIf { it.ratingStyle == Rating.RATING_HEART && it.isRated }?.hasHeart()
+        val playback = controller.playbackState
+        val canRate = (playback?.actions ?: 0L) and PlaybackState.ACTION_SET_RATING != 0L &&
+            (rating?.ratingStyle == Rating.RATING_HEART || controller.ratingType == Rating.RATING_HEART)
+        val notificationCommands = mutableListOf<LikeCommand>()
+        val customCommands = mutableListOf<LikeCommand>()
+        val report = StringBuilder("CrowPlayer ${BuildConfig.VERSION_NAME}\nИсточник: ${controller.packageName}\n")
+            .append("Рейтинг: style=${rating?.ratingStyle}, rated=${rating?.isRated}, heart=$ratedHeart\n")
+            .append("SET_RATING: $canRate\nКоманды медиасессии:\n")
+        playback?.customActions.orEmpty().forEach { action ->
+            report.append("- ${action.action}: ${action.name}\n")
+            LikeActionPolicy.direction(action.name, action.action)?.let { direction ->
+                customCommands += LikeCommand(direction) {
+                    controller.transportControls.sendCustomAction(action, action.extras)
+                }
+            }
+        }
+        report.append("Кнопки уведомления текущего трека:\n")
+        val currentTrack = track(controller)
+        notifications.values.filter { sbn ->
+            val notification = sbn.notification
+            sbn.packageName == controller.packageName &&
+                notification.extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION) == controller.sessionToken &&
+                !currentTrack.title.isNullOrBlank() &&
+                notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() == currentTrack.title
+        }.sortedByDescending { it.postTime }.take(1).forEach { sbn ->
+            sbn.notification.actions.orEmpty().forEach { action ->
+                report.append("- ${action.title}\n")
+                val intent = action.actionIntent
+                // A PendingIntent must belong to the same player as the session.
+                if (intent != null && intent.creatorPackage == controller.packageName) {
+                    LikeActionPolicy.direction(action.title)?.let { direction ->
+                        notificationCommands += LikeCommand(direction) { intent.send() }
+                    }
+                }
+            }
+        }
+        val state = ratedHeart ?: LikeActionPolicy.reportedState(notificationCommands.map { it.direction })
+            ?: LikeActionPolicy.reportedState(customCommands.map { it.direction })
+        val commands = notificationCommands + customCommands + if (canRate) listOf(
+            LikeCommand(if (state == true) LikeActionPolicy.Direction.REMOVE else LikeActionPolicy.Direction.ADD) {
+                controller.transportControls.setRating(Rating.newHeartRating(state != true))
+            }
+        ) else emptyList()
+        return LikeSupport(state, commands, report.toString())
+    }
+
+    private fun requestLike(onResult: (LikeResult) -> Unit) {
+        if (pendingLike != null) { onResult(LikeResult.BUSY); return }
+        val controller = activeController
+        if (controller == null) { onResult(LikeResult.DISCONNECTED); return }
+        try {
+            val requestedTrack = track(controller)
+            val support = likeSupport(controller)
+            val command = support.command()
+            if (track(controller) != requestedTrack) { onResult(LikeResult.TRACK_CHANGED); return }
+            if (command == null || requestedTrack.title.isNullOrBlank()) {
+                onResult(LikeResult.UNAVAILABLE)
+                return
+            }
+            val request = LikeRequest(controller.sessionToken, requestedTrack, command.direction.liked, onResult)
+            pendingLike = request
+            // Start the watchdog before sending: a stuck vendor Binder must not disable the heart forever.
+            handler.postDelayed(verifyLike, 250L)
+            commandExecutor.execute {
+                try {
+                    val current = activeController
+                    if (pendingLike !== request || listener !== this || current == null || !matches(request, current) ||
+                        SystemClock.elapsedRealtime() - request.startedAt >= 5000L) {
+                        handler.post { finishLike(request, LikeResult.TRACK_CHANGED) }
+                        return@execute
+                    }
+                    command.send()
+                    handler.post { if (pendingLike === request) request.sent = true }
+                } catch (e: Exception) {
+                    Log.w("CrowPlayer", "Favourite command failed", e)
+                    handler.post { finishLike(request, LikeResult.FAILED) }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("CrowPlayer", "Favourite command unavailable", e)
+            onResult(LikeResult.FAILED)
+        }
+    }
+
+    private fun finishLike(request: LikeRequest, result: LikeResult) {
+        if (pendingLike !== request) return
+        pendingLike = null
+        handler.removeCallbacks(verifyLike)
+        request.callback(result)
     }
 
     private fun updateSnapshot() {
@@ -127,17 +268,21 @@ class MusicNotificationListener : NotificationListenerService() {
             val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
             val sessions = manager.getActiveSessions(ComponentName(this, MusicNotificationListener::class.java))
             val controller = sessions.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+                ?: sessions.firstOrNull { it.sessionToken == activeController?.sessionToken }
                 ?: sessions.firstOrNull()
+            activeController = controller
             if (controller == null) {
-                activeController = null
+                pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
                 PlayerSnapshot.clear()
                 return
             }
-            activeController = controller
+            pendingLike?.takeUnless { matches(it, controller) }?.let { finishLike(it, LikeResult.TRACK_CHANGED) }
             applyController(controller)
         } catch (e: SecurityException) {
+            activeController = null
+            pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
+            PlayerSnapshot.clear()
             PlayerSnapshot.playback = "Нет доступа к медиасессиям"
-            PlayerSnapshot.lastUpdated = System.currentTimeMillis()
             Log.w("CrowPlayer", "Media session access unavailable", e)
         } catch (e: Exception) { Log.w("CrowPlayer", "Could not read media session", e) }
     }
@@ -154,15 +299,18 @@ class MusicNotificationListener : NotificationListenerService() {
         PlayerSnapshot.title = title.take(80)
         PlayerSnapshot.artist = artist.take(80)
         PlayerSnapshot.album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: ""
-        PlayerSnapshot.packageName = controller.packageName ?: ""
+        PlayerSnapshot.packageName = controller.packageName
         PlayerSnapshot.playback = when (state) {
             PlaybackState.STATE_PLAYING, PlaybackState.STATE_BUFFERING -> "playing"
             PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED -> "paused"
             else -> "paused"
         }
         PlayerSnapshot.artwork = artwork
-        val reportedLiked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true
-        PlayerSnapshot.isLiked = reportedLiked
+        val support = likeSupport(controller)
+        PlayerSnapshot.isLiked = support.state == true
+        PlayerSnapshot.likeStateKnown = support.state != null
+        PlayerSnapshot.likeAvailable = support.command() != null
+        PlayerSnapshot.likeDiagnostics = support.report
         PlayerSnapshot.positionMs = (controller.playbackState?.position ?: 0L).coerceAtLeast(0L)
         PlayerSnapshot.durationMs = (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L).coerceAtLeast(0L)
         PlayerSnapshot.lastUpdated = System.currentTimeMillis()

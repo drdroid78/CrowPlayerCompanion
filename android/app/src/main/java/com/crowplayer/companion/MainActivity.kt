@@ -2,6 +2,9 @@ package com.crowplayer.companion
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.ComponentName
 import android.content.pm.PackageManager
@@ -13,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -24,6 +28,7 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 
 /** Škoda-inspired dark/emerald companion UI. Media metadata remains supplied by MediaSession. */
 class MainActivity : Activity() {
@@ -31,6 +36,8 @@ class MainActivity : Activity() {
     private lateinit var trackTitle: TextView
     private lateinit var likeButton: ImageView
     private var likeRequestPending = false
+    private lateinit var likeFeedback: TextView
+    private var likeFeedbackUntil = 0L
     private lateinit var artist: TextView
     private lateinit var playback: TextView
     private lateinit var source: TextView
@@ -88,7 +95,7 @@ class MainActivity : Activity() {
         brand.addView(label("ŠKODA  /  CROWPLAYER", 15f, Color.WHITE, true, Gravity.START))
         brand.addView(label("MUSIC COMPANION", 10f, emerald, true, Gravity.START))
         header.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(label("0.6.0", 11f, muted, true))
+        header.addView(label(BuildConfig.VERSION_NAME, 11f, muted, true))
         content.addView(header)
 
         val statusRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -131,11 +138,16 @@ class MainActivity : Activity() {
                 if (likeRequestPending) return@setOnClickListener
                 likeRequestPending = true
                 isEnabled = false
-                MusicNotificationListener.toggleLike { confirmed ->
+                likeFeedback.text = "Обновляем избранное…"
+                likeFeedbackUntil = Long.MAX_VALUE
+                likeFeedback.visibility = View.VISIBLE
+                MusicNotificationListener.toggleLike { result ->
                     likeRequestPending = false
+                    if (isDestroyed) return@toggleLike
                     likeButton.isEnabled = true
-                    status.text = if (confirmed) "ИЗБРАННОЕ ОБНОВЛЕНО"
-                        else "ЯНДЕКС МУЗЫКА НЕ ПОДТВЕРДИЛА ЛАЙК"
+                    likeFeedback.text = result.message
+                    likeFeedbackUntil = SystemClock.elapsedRealtime() + 8000L
+                    Toast.makeText(this@MainActivity, result.message, Toast.LENGTH_LONG).show()
                     renderSnapshot()
                 }
             }
@@ -144,6 +156,8 @@ class MainActivity : Activity() {
         playerCard.addView(titleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         artist = label("Запусти Яндекс Музыку", 15f, muted)
         playerCard.addView(artist, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
+        likeFeedback = label("", 12f, muted).apply { visibility = View.GONE }
+        playerCard.addView(likeFeedback, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
 
         val playbackRow = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         playback = label("ОЖИДАНИЕ", 10f, emerald, true).apply {
@@ -204,6 +218,19 @@ class MainActivity : Activity() {
         settingsActions.addView(actionButton("ОБНОВИТЬ", false) { renderSnapshot() },
             LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(5) })
         settingsCard.addView(settingsActions, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(10) })
+        settingsCard.addView(actionButton("ДИАГНОСТИКА ПЛЕЕРА", false) {
+            val report = PlayerSnapshot.likeDiagnostics
+            AlertDialog.Builder(this)
+                .setTitle("Управление избранным")
+                .setMessage(report)
+                .setPositiveButton("Скопировать") { _, _ ->
+                    (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("CrowPlayer", report))
+                    Toast.makeText(this, "Отчёт скопирован", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Закрыть", null)
+                .show()
+        }, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(8) })
         val nightSwitch = Switch(this).apply {
             text = "Ночной режим дисплея"
             setTextColor(Color.WHITE)
@@ -325,7 +352,16 @@ class MainActivity : Activity() {
         status.text = if (hasSession) "МЕДИАСЕССИЯ ОБНАРУЖЕНА" else "МЕДИАСЕССИЯ НЕ НАЙДЕНА"
         trackTitle.text = PlayerSnapshot.title
         likeButton.setImageResource(if (PlayerSnapshot.isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline)
-        likeButton.contentDescription = if (PlayerSnapshot.isLiked) "Убрать из избранного" else "Добавить в избранное"
+        likeButton.isEnabled = !likeRequestPending
+        likeButton.alpha = if (PlayerSnapshot.likeAvailable && !likeRequestPending) 1f else 0.45f
+        likeButton.contentDescription = when {
+            likeRequestPending -> "Ожидание подтверждения избранного"
+            !PlayerSnapshot.likeAvailable -> "Избранное недоступно. Нажми для пояснения."
+            !PlayerSnapshot.likeStateKnown -> "Добавить в избранное. Текущее состояние неизвестно."
+            PlayerSnapshot.isLiked -> "Убрать из избранного"
+            else -> "Добавить в избранное"
+        }
+        likeFeedback.visibility = if (SystemClock.elapsedRealtime() < likeFeedbackUntil) View.VISIBLE else View.GONE
         artist.text = if (PlayerSnapshot.album.isNotBlank()) "${PlayerSnapshot.artist}  ·  ${PlayerSnapshot.album}" else PlayerSnapshot.artist
         val playing = PlayerSnapshot.playback.equals("playing", true)
         playback.text = if (playing) "●  ВОСПРОИЗВЕДЕНИЕ" else "Ⅱ  ПАУЗА"
