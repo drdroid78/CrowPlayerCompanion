@@ -22,6 +22,11 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { buildConfig = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    lint {
+        // Direct-install HarmonyOS companion: retain target 32 until a separate target migration.
+        // Keep the Play publishing requirement visible without blocking this device build.
+        warning += "ExpiredTargetSdkVersion"
+    }
 }
 
 dependencies {

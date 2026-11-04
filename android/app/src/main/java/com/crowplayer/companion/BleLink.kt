@@ -1,6 +1,8 @@
 package com.crowplayer.companion
 
 import android.annotation.SuppressLint
+import android.Manifest
+import android.content.pm.PackageManager
 import android.bluetooth.BluetoothDevice
 import android.graphics.Bitmap
 import java.io.ByteArrayOutputStream
@@ -46,11 +48,25 @@ class BleLink(private val context: Context, private val onStatus: (String) -> Un
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+            if (Build.VERSION.SDK_INT >= 31 &&
+                context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                characteristic = null
+                artCharacteristic = null
+                mtuReady = false
+                writeInFlight = false
+                artWriteInFlight = false
+                if (gatt === g) gatt = null
+                onStatus("Разреши доступ к Bluetooth и подключи CrowPanel снова")
+                return
+            }
             if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
                 onStatus("CrowPanel найден — настраиваем BLE…")
-                @SuppressLint("MissingPermission")
-                run { g.requestMtu(247) }
-                g.discoverServices()
+                try {
+                    g.requestMtu(247)
+                    g.discoverServices()
+                } catch (_: SecurityException) {
+                    onStatus("Доступ к Bluetooth отозван. Разреши его и подключи CrowPanel снова.")
+                }
             } else {
                 characteristic = null
                 mtuReady = false

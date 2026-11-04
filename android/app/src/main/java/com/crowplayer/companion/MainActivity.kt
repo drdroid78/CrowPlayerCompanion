@@ -321,8 +321,10 @@ class MainActivity : Activity() {
             val needed = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
                 .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
             if (needed.isNotEmpty()) { requestPermissions(needed.toTypedArray(), 71); return }
-        } else if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 71); return
+        } else {
+            val needed = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+            if (needed.isNotEmpty()) { requestPermissions(needed.toTypedArray(), 71); return }
         }
         ble.start()
     }
