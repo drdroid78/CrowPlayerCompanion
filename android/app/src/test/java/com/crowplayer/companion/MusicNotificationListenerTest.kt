@@ -10,6 +10,8 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Looper
 import android.os.Process
+import android.os.Binder
+import android.os.Parcel
 import android.service.notification.StatusBarNotification
 import com.crowplayer.companion.MusicNotificationListener.LikeResult
 import org.junit.After
@@ -17,17 +19,19 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.*
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.annotation.Implements
+import org.robolectric.annotation.Implementation
+import org.robolectric.shadows.ShadowTransportControls
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
+@Config(sdk = [28], shadows = [MusicNotificationListenerTest.TestTransportControls::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class MusicNotificationListenerTest {
     private lateinit var service: MusicNotificationListener
@@ -39,31 +43,30 @@ class MusicNotificationListenerTest {
 
     @Before fun setUp() {
         service = Robolectric.buildService(MusicNotificationListener::class.java).create().get()
-        controller = mock(MediaController::class.java)
-        controls = mock(MediaController.TransportControls::class.java)
-        token = mock(MediaSession.Token::class.java)
-        `when`(controller.sessionToken).thenReturn(token)
-        `when`(controller.packageName).thenReturn(service.packageName)
-        `when`(controller.transportControls).thenReturn(controls)
-        `when`(controller.metadata).thenReturn(metadata())
-        `when`(controller.playbackState).thenReturn(playback())
+        TestTransportControls.onRating = null
+        token = newToken()
+        controller = MediaController(service, token)
+        controls = controller.transportControls
+        shadowOf(controller).setPackageName(service.packageName)
+        shadowOf(controller).setMetadata(metadata())
+        shadowOf(controller).setPlaybackState(playback())
         setStatic("activeController", controller)
         setStatic("listener", service)
         PlayerSnapshot.clear()
     }
 
-    @After fun tearDown() { service.onDestroy(); main.idle() }
+    @After fun tearDown() { TestTransportControls.onRating = null; service.onDestroy(); main.idle() }
 
     @Test fun `uses advertised custom action when SET_RATING is absent`() {
         val add = action("player.LIKE", "Нравится")
-        `when`(controller.playbackState).thenReturn(playback(custom = add))
+        shadowOf(controller).setPlaybackState(playback(custom = add))
         request()
         awaitSent()
-        verify(controls).sendCustomAction(add, add.extras)
-        verify(controls, never()).setRating(any(Rating::class.java))
+        assertEquals(add.action, shadowOf(controls).customAction)
+        assertNull(shadowOf(controls).rating)
         assertFalse(PlayerSnapshot.isLiked)
         assertTrue(results.isEmpty())
-        `when`(controller.playbackState).thenReturn(playback(custom = action("player.UNLIKE", "Убрать из избранного")))
+        shadowOf(controller).setPlaybackState(playback(custom = action("player.UNLIKE", "Убрать из избранного")))
         main.idleFor(250, TimeUnit.MILLISECONDS)
         assertEquals(listOf(LikeResult.CONFIRMED), results)
         assertTrue(PlayerSnapshot.isLiked)
@@ -88,7 +91,7 @@ class MusicNotificationListenerTest {
     }
 
     @Test fun `notification from another session cannot control this player`() {
-        notification("Нравится", "test.OTHER", otherToken = mock(MediaSession.Token::class.java))
+        notification("Нравится", "test.OTHER", otherToken = newToken())
         request()
         assertEquals(listOf(LikeResult.UNAVAILABLE), results)
         assertTrue(shadowOf(service.application).broadcastIntents.isEmpty())
@@ -101,8 +104,8 @@ class MusicNotificationListenerTest {
     }
 
     @Test fun `unrated heart can be sent but is not considered confirmed`() {
-        `when`(controller.metadata).thenReturn(metadata(rating = Rating.newUnratedRating(Rating.RATING_HEART)))
-        `when`(controller.playbackState).thenReturn(playback(PlaybackState.ACTION_SET_RATING))
+        shadowOf(controller).setMetadata(metadata(rating = Rating.newUnratedRating(Rating.RATING_HEART)))
+        shadowOf(controller).setPlaybackState(playback(PlaybackState.ACTION_SET_RATING))
         request()
         awaitSent()
         main.idleFor(6, TimeUnit.SECONDS)
@@ -111,11 +114,11 @@ class MusicNotificationListenerTest {
     }
 
     @Test fun `rating needs metadata confirmation from the requested track`() {
-        `when`(controller.metadata).thenReturn(metadata(rating = Rating.newHeartRating(false)))
-        `when`(controller.playbackState).thenReturn(playback(PlaybackState.ACTION_SET_RATING))
+        shadowOf(controller).setMetadata(metadata(rating = Rating.newHeartRating(false)))
+        shadowOf(controller).setPlaybackState(playback(PlaybackState.ACTION_SET_RATING))
         request()
         awaitSent()
-        `when`(controller.metadata).thenReturn(metadata(id = "next-track", rating = Rating.newHeartRating(true)))
+        shadowOf(controller).setMetadata(metadata(id = "next-track", rating = Rating.newHeartRating(true)))
         main.idleFor(250, TimeUnit.MILLISECONDS)
         assertEquals(listOf(LikeResult.TRACK_CHANGED), results)
         assertFalse(PlayerSnapshot.isLiked)
@@ -124,12 +127,14 @@ class MusicNotificationListenerTest {
     }
 
     @Test fun `same package with a different session cannot confirm a request`() {
-        `when`(controller.metadata).thenReturn(metadata(rating = Rating.newHeartRating(false)))
-        `when`(controller.playbackState).thenReturn(playback(PlaybackState.ACTION_SET_RATING))
+        shadowOf(controller).setMetadata(metadata(rating = Rating.newHeartRating(false)))
+        shadowOf(controller).setPlaybackState(playback(PlaybackState.ACTION_SET_RATING))
         request()
         awaitSent()
-        `when`(controller.sessionToken).thenReturn(mock(MediaSession.Token::class.java))
-        `when`(controller.metadata).thenReturn(metadata(rating = Rating.newHeartRating(true)))
+        val other = MediaController(service, newToken())
+        shadowOf(other).setPackageName(service.packageName)
+        shadowOf(other).setMetadata(metadata(rating = Rating.newHeartRating(true)))
+        setStatic("activeController", other)
         main.idleFor(250, TimeUnit.MILLISECONDS)
         assertEquals(listOf(LikeResult.TRACK_CHANGED), results)
     }
@@ -138,14 +143,13 @@ class MusicNotificationListenerTest {
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
         val returned = CountDownLatch(1)
-        `when`(controller.metadata).thenReturn(metadata(rating = Rating.newHeartRating(false)))
-        `when`(controller.playbackState).thenReturn(playback(PlaybackState.ACTION_SET_RATING))
-        doAnswer {
+        shadowOf(controller).setMetadata(metadata(rating = Rating.newHeartRating(false)))
+        shadowOf(controller).setPlaybackState(playback(PlaybackState.ACTION_SET_RATING))
+        TestTransportControls.onRating = {
             started.countDown()
             release.await(3, TimeUnit.SECONDS)
             returned.countDown()
-            null
-        }.`when`(controls).setRating(any(Rating::class.java))
+        }
         try {
             request()
             assertTrue(started.await(2, TimeUnit.SECONDS))
@@ -161,7 +165,7 @@ class MusicNotificationListenerTest {
     }
 
     @Test fun `disconnect cancels a pending command and clears favourite state`() {
-        `when`(controller.playbackState).thenReturn(playback(custom = action("player.LIKE", "Like")))
+        shadowOf(controller).setPlaybackState(playback(custom = action("player.LIKE", "Like")))
         request()
         awaitSent()
         service.onListenerDisconnected()
@@ -174,6 +178,26 @@ class MusicNotificationListenerTest {
     }
 
     private fun request() { MusicNotificationListener.toggleLike { results += it }; main.idle() }
+
+    private fun newToken(): MediaSession.Token {
+        val parcel = Parcel.obtain()
+        return try {
+            parcel.writeStrongBinder(Binder())
+            parcel.setDataPosition(0)
+            MediaSession.Token.CREATOR.createFromParcel(parcel)
+        } finally { parcel.recycle() }
+    }
+
+    @Implements(MediaController.TransportControls::class)
+    class TestTransportControls : ShadowTransportControls() {
+        companion object { @Volatile var onRating: (() -> Unit)? = null }
+
+        @Implementation
+        override fun setRating(rating: Rating) {
+            onRating?.invoke()
+            super.setRating(rating)
+        }
+    }
 
     private fun awaitSent() {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)

@@ -27,5 +27,8 @@ android {
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("org.mockito:mockito-core:5.14.2")
+}
+
+tasks.withType<Test>().configureEach {
+    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }
