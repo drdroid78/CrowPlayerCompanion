@@ -9,7 +9,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Looper
-import android.os.UserHandle
+import android.os.Process
 import android.service.notification.StatusBarNotification
 import com.crowplayer.companion.MusicNotificationListener.LikeResult
 import org.junit.After
@@ -210,7 +210,7 @@ class MusicNotificationListenerTest {
         val notification = Notification.Builder(service, "music").setContentTitle(title)
             .addAction(Notification.Action.Builder(0, label, intent).build()).build()
         notification.extras.putParcelable(Notification.EXTRA_MEDIA_SESSION, otherToken)
-        val sbn = StatusBarNotification(service.packageName, service.packageName, 1, null, 0, 0, notification, UserHandle.of(0), null, 100L)
+        val sbn = StatusBarNotification(service.packageName, service.packageName, 1, null, 0, 0, 0, notification, Process.myUserHandle(), 100L)
         val cache = MusicNotificationListener::class.java.getDeclaredField("notifications").apply { isAccessible = true }
             .get(service) as MutableMap<String, StatusBarNotification>
         cache[sbn.key] = sbn
