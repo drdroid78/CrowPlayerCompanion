@@ -20,12 +20,19 @@ import java.util.concurrent.Executors
 class MusicNotificationListener : NotificationListenerService() {
     enum class LikeResult(val message: String) {
         CONFIRMED("Избранное обновлено"),
-        UNAVAILABLE("Плеер не предоставил команду избранного. Открой диагностику плеера в настройках ниже."),
+        UNAVAILABLE("Плеер не предоставил команду избранного. Подключи аккаунт Яндекса в настройках ниже."),
         UNCONFIRMED("Команда отправлена, но плеер не подтвердил изменение избранного"),
         TRACK_CHANGED("Трек сменился. Повтори действие для нового трека."),
         DISCONNECTED("Нет доступа к плееру. Проверь доступ к уведомлениям."),
         FAILED("Не удалось отправить команду избранного"),
-        BUSY("Дождись подтверждения предыдущей команды")
+        BUSY("Дождись подтверждения предыдущей команды"),
+        API_AUTH(YandexProblem.Kind.AUTH.message),
+        API_NETWORK(YandexProblem.Kind.NETWORK.message),
+        API_TRACK(YandexProblem.Kind.TRACK.message),
+        API_AMBIGUOUS(YandexProblem.Kind.AMBIGUOUS.message),
+        API_RESPONSE(YandexProblem.Kind.RESPONSE.message),
+        API_CANCELLED(YandexProblem.Kind.CANCELLED.message),
+        API_UNCONFIRMED(YandexProblem.Kind.UNCONFIRMED.message)
     }
 
     companion object {
@@ -63,6 +70,9 @@ class MusicNotificationListener : NotificationListenerService() {
                 else service.requestLike(onResult)
             }
         }
+
+        internal fun yandexChoices() = listener?.yandexLikes?.choices().orEmpty()
+        internal fun chooseYandexTrack(id: String) = listener?.yandexLikes?.choose(id) == true
     }
 
     private data class LikeCommand(val direction: LikeActionPolicy.Direction, val send: () -> Unit)
@@ -81,6 +91,8 @@ class MusicNotificationListener : NotificationListenerService() {
     private val handler = Handler(Looper.getMainLooper())
     private val notifications = mutableMapOf<String, StatusBarNotification>()
     @Volatile private var pendingLike: LikeRequest? = null
+    private var yandexLikes: YandexLikes? = null
+    private var apiRequestPending = false
     private val poll = object : Runnable {
         override fun run() { updateSnapshot(); handler.postDelayed(this, 1000L) }
     }
@@ -143,14 +155,20 @@ class MusicNotificationListener : NotificationListenerService() {
 
     private fun disconnect() {
         handler.removeCallbacksAndMessages(null)
+        val wasActive = listener === this
+        if (wasActive) { listener = null; activeController = null }
+        yandexLikes?.close()
+        yandexLikes = null
         pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
         notifications.clear()
-        if (listener === this) {
-            listener = null
-            activeController = null
-            PlayerSnapshot.clear()
-        }
+        if (wasActive) PlayerSnapshot.clear()
     }
+
+    private fun apiTarget(controller: MediaController? = activeController): YandexLikes.Target? = controller?.let {
+        YandexLikes.Target(it.sessionToken, it.packageName, track(it), it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty())
+    }
+
+    private fun directLikes(): YandexLikes = yandexLikes ?: YandexLikes.create(this) { apiTarget() }.also { yandexLikes = it }
 
     private fun track(controller: MediaController): LikeActionPolicy.Track {
         val metadata = controller.metadata
@@ -219,10 +237,30 @@ class MusicNotificationListener : NotificationListenerService() {
     }
 
     private fun requestLike(onResult: (LikeResult) -> Unit) {
-        if (pendingLike != null) { onResult(LikeResult.BUSY); return }
+        if (pendingLike != null || apiRequestPending) { onResult(LikeResult.BUSY); return }
         val controller = activeController
         if (controller == null) { onResult(LikeResult.DISCONNECTED); return }
         try {
+            if (YandexLikes.isYandex(controller.packageName) && YandexAccountStore.get(this).read() != null) {
+                apiRequestPending = true
+                val started = directLikes().toggle { result ->
+                    apiRequestPending = false
+                    if (result.liked != null && listener === this) runCatching { activeController?.let { applyController(it) } }
+                    val status = when (result.problem) {
+                        null -> LikeResult.CONFIRMED
+                        YandexProblem.Kind.AUTH -> LikeResult.API_AUTH
+                        YandexProblem.Kind.NETWORK -> LikeResult.API_NETWORK
+                        YandexProblem.Kind.TRACK -> LikeResult.API_TRACK
+                        YandexProblem.Kind.AMBIGUOUS -> LikeResult.API_AMBIGUOUS
+                        YandexProblem.Kind.CANCELLED -> LikeResult.API_CANCELLED
+                        YandexProblem.Kind.UNCONFIRMED -> LikeResult.API_UNCONFIRMED
+                        else -> LikeResult.API_RESPONSE
+                    }
+                    onResult(status)
+                }
+                if (!started) { apiRequestPending = false; onResult(LikeResult.DISCONNECTED) }
+                return
+            }
             val requestedTrack = track(controller)
             val support = likeSupport(controller)
             val command = support.command()
@@ -271,6 +309,7 @@ class MusicNotificationListener : NotificationListenerService() {
                 ?: sessions.firstOrNull { it.sessionToken == activeController?.sessionToken }
                 ?: sessions.firstOrNull()
             activeController = controller
+            yandexLikes?.cancelIfTargetChanged()
             if (controller == null) {
                 pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
                 PlayerSnapshot.clear()
@@ -280,6 +319,7 @@ class MusicNotificationListener : NotificationListenerService() {
             applyController(controller)
         } catch (e: SecurityException) {
             activeController = null
+            yandexLikes?.cancelIfTargetChanged()
             pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
             PlayerSnapshot.clear()
             PlayerSnapshot.playback = "Нет доступа к медиасессиям"
@@ -307,10 +347,15 @@ class MusicNotificationListener : NotificationListenerService() {
         }
         PlayerSnapshot.artwork = artwork
         val support = likeSupport(controller)
-        PlayerSnapshot.isLiked = support.state == true
-        PlayerSnapshot.likeStateKnown = support.state != null
-        PlayerSnapshot.likeAvailable = support.command() != null
-        PlayerSnapshot.likeDiagnostics = support.report
+        val direct = apiTarget(controller)?.let { directLikes().view(it) }
+        val liked = if (direct != null) direct.liked else support.state
+        PlayerSnapshot.isLiked = liked == true
+        PlayerSnapshot.likeStateKnown = liked != null
+        PlayerSnapshot.likeAvailable = direct != null || support.command() != null
+        PlayerSnapshot.likeDiagnostics = support.report +
+            "\nMedia ID: ${track(controller).mediaId.orEmpty().take(160)}\n" +
+            "Аккаунт Яндекса: ${if (YandexAccountStore.get(this).read() != null) "подключён" else "не подключён"}\n" +
+            (direct?.let { "Прямое избранное: ${it.message}\nID записи: ${it.id.orEmpty()}" } ?: "")
         PlayerSnapshot.positionMs = (controller.playbackState?.position ?: 0L).coerceAtLeast(0L)
         PlayerSnapshot.durationMs = (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L).coerceAtLeast(0L)
         PlayerSnapshot.lastUpdated = System.currentTimeMillis()

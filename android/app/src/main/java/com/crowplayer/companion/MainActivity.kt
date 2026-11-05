@@ -44,6 +44,9 @@ class MainActivity : Activity() {
     private lateinit var art: ImageView
     private lateinit var bleStatus: TextView
     private lateinit var notificationAccessStatus: TextView
+    private lateinit var yandexAccountStatus: TextView
+    private lateinit var yandexAccountButton: Button
+    private var yandexLogin: YandexLoginDialog? = null
     private lateinit var ble: BleLink
     private lateinit var trackSeekBar: SeekBar
     private var userSeeking = false
@@ -135,21 +138,7 @@ class MainActivity : Activity() {
             background = rounded(Color.TRANSPARENT, 24f)
             setPadding(dp(9), dp(9), dp(9), dp(9))
             setOnClickListener {
-                if (likeRequestPending) return@setOnClickListener
-                likeRequestPending = true
-                isEnabled = false
-                likeFeedback.text = "Обновляем избранное…"
-                likeFeedbackUntil = Long.MAX_VALUE
-                likeFeedback.visibility = View.VISIBLE
-                MusicNotificationListener.toggleLike { result ->
-                    likeRequestPending = false
-                    if (isDestroyed) return@toggleLike
-                    likeButton.isEnabled = true
-                    likeFeedback.text = result.message
-                    likeFeedbackUntil = SystemClock.elapsedRealtime() + 8000L
-                    Toast.makeText(this@MainActivity, result.message, Toast.LENGTH_LONG).show()
-                    renderSnapshot()
-                }
+                requestTrackLike()
             }
         }
         titleRow.addView(likeButton, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.END or Gravity.CENTER_VERTICAL))
@@ -188,6 +177,20 @@ class MainActivity : Activity() {
         }
         playerCard.addView(trackSeekBar, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(4) })
         content.addView(playerCard, LinearLayout.LayoutParams(-1, -2))
+
+        val accountCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(15), dp(16), dp(15))
+            background = rounded(Color.rgb(17, 25, 24), 18f)
+        }
+        accountCard.addView(label("ИЗБРАННОЕ ЯНДЕКС МУЗЫКИ", 10f, muted, true, Gravity.START))
+        yandexAccountStatus = label("Аккаунт не подключён", 12f, muted, false, Gravity.START)
+        accountCard.addView(yandexAccountStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        accountCard.addView(label("Для прямого управления сердечком войди в тот же аккаунт, что и в Яндекс Музыке.", 12f, muted, false, Gravity.START))
+        yandexAccountButton = actionButton("ВОЙТИ В ЯНДЕКС", false) {
+            (yandexLogin ?: YandexLoginDialog(this).also { yandexLogin = it }).show()
+        }
+        accountCard.addView(yandexAccountButton, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
+        content.addView(accountCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
 
         val linkCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(15), dp(16), dp(15))
@@ -347,10 +350,38 @@ class MainActivity : Activity() {
         }
     }
     override fun onPause() { handler.removeCallbacks(refreshTask); super.onPause() }
-    override fun onDestroy() { ble.close(); super.onDestroy() }
+    override fun onDestroy() { yandexLogin?.close(); ble.close(); super.onDestroy() }
+
+    private fun requestTrackLike() {
+        if (likeRequestPending) return
+        likeRequestPending = true
+        likeButton.isEnabled = false
+        likeFeedback.text = "Обновляем избранное…"
+        likeFeedbackUntil = Long.MAX_VALUE
+        likeFeedback.visibility = View.VISIBLE
+        MusicNotificationListener.toggleLike { result ->
+            likeRequestPending = false
+            if (isDestroyed) return@toggleLike
+            likeFeedback.text = result.message
+            likeFeedbackUntil = SystemClock.elapsedRealtime() + 10000L
+            Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+            renderSnapshot()
+            if (result == MusicNotificationListener.LikeResult.API_AMBIGUOUS) {
+                val choices = MusicNotificationListener.yandexChoices()
+                if (choices.isNotEmpty()) AlertDialog.Builder(this).setTitle("Выбери версию трека")
+                    .setItems(choices.map { "${it.title} — ${it.artist}\n${it.album} · ${it.duration / 60000}:${(it.duration / 1000 % 60).toString().padStart(2, '0')}" }.toTypedArray()) { _, index ->
+                        if (MusicNotificationListener.chooseYandexTrack(choices[index].id)) requestTrackLike()
+                        else Toast.makeText(this, "Трек сменился. Нажми сердце для нового трека.", Toast.LENGTH_LONG).show()
+                    }.setNegativeButton("Отмена", null).show()
+            }
+        }
+    }
 
     private fun renderSnapshot() {
         val hasSession = PlayerSnapshot.lastUpdated > 0L && (PlayerSnapshot.packageName.isNotBlank() || PlayerSnapshot.playback == "Нет доступа к медиасессиям")
+        val account = YandexAccountStore.get(this).read()
+        yandexAccountStatus.text = account?.let { "Подключён: ${it.name}" } ?: "Аккаунт не подключён"
+        yandexAccountButton.text = if (account == null) "ВОЙТИ В ЯНДЕКС" else "АККАУНТ ЯНДЕКСА"
         status.text = if (hasSession) "МЕДИАСЕССИЯ ОБНАРУЖЕНА" else "МЕДИАСЕССИЯ НЕ НАЙДЕНА"
         trackTitle.text = PlayerSnapshot.title
         likeButton.setImageResource(if (PlayerSnapshot.isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline)
@@ -359,7 +390,7 @@ class MainActivity : Activity() {
         likeButton.contentDescription = when {
             likeRequestPending -> "Ожидание подтверждения избранного"
             !PlayerSnapshot.likeAvailable -> "Избранное недоступно. Нажми для пояснения."
-            !PlayerSnapshot.likeStateKnown -> "Добавить в избранное. Текущее состояние неизвестно."
+            !PlayerSnapshot.likeStateKnown -> "Изменить избранное. Текущее состояние неизвестно."
             PlayerSnapshot.isLiked -> "Убрать из избранного"
             else -> "Добавить в избранное"
         }
