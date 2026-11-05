@@ -96,6 +96,9 @@ internal class YandexLikes(
         epoch++ // Discard a read started before this write, even if its HTTP reply arrives later.
         val candidatesBefore = state.candidates
         val choice = selectedId
+        // Honour the action shown by the heart. An unknown/outline heart requests add.
+        // A simultaneous change in Yandex must not turn an intended add into a remove.
+        val desired = state.liked != true
         val request = Request(current, session.key, callback)
         request.timeout = Runnable { finish(request, Outcome(YandexProblem.Kind.UNCONFIRMED)) }
         pending = request
@@ -111,12 +114,14 @@ internal class YandexLikes(
                 resolved = candidates.firstOrNull { it.id == choice } ?: candidates.singleOrNull()
                 val track = resolved ?: throw YandexProblem(if (candidates.isEmpty()) YandexProblem.Kind.TRACK else YandexProblem.Kind.AMBIGUOUS)
                 check(request, session)
-                val desired = !api.likedTracks(session.access, session.uid).contains(track.id)
+                val before = api.likedTracks(session.access, session.uid).contains(track.id)
                 check(request, session) // Last guard before changing the account on the server.
-                writeStarted = true
-                if (!api.setLike(session.access, session.uid, track.id, desired)) throw YandexProblem(YandexProblem.Kind.UNCONFIRMED)
-                check(request, session)
-                val confirmed = api.likedTracks(session.access, session.uid).contains(track.id)
+                val confirmed = if (before == desired) before else {
+                    writeStarted = true
+                    if (!api.setLike(session.access, session.uid, track.id, desired)) throw YandexProblem(YandexProblem.Kind.UNCONFIRMED)
+                    check(request, session)
+                    api.likedTracks(session.access, session.uid).contains(track.id)
+                }
                 if (confirmed != desired) throw YandexProblem(YandexProblem.Kind.UNCONFIRMED)
                 Outcome(liked = confirmed)
             } catch (e: Exception) {

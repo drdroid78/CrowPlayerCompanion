@@ -164,4 +164,21 @@ class YandexLikesTest {
         assertEquals(1, server.writes)
         assertEquals(1, results.size)
     }
+
+    @Test fun `an external like cannot turn a displayed add into an accidental remove`() {
+        establishRead()
+        assertEquals(false, likes.view(target!!)!!.liked)
+        server.liked.add("101") // Changed in the official player after CrowPlayer's last read.
+        toggle(); drain()
+        assertEquals(true, results.single().liked)
+        assertTrue(server.liked.contains("101"))
+        assertEquals(0, server.writes)
+    }
+
+    @Test fun `an unknown heart never removes an already liked track`() {
+        server.liked.add("101")
+        toggle(); drain()
+        assertEquals(true, results.single().liked)
+        assertEquals(0, server.writes)
+    }
 }
