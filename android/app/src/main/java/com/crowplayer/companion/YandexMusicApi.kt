@@ -34,7 +34,9 @@ internal data class YandexHttpRequest(
 internal fun interface YandexTransport { fun execute(request: YandexHttpRequest): JSONObject }
 
 /** HTTPS only, no redirects carrying credentials, bounded responses and network timeouts. */
-internal class YandexHttpsTransport : YandexTransport {
+internal class YandexHttpsTransport(
+    private val connectionFactory: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }
+) : YandexTransport {
     override fun execute(request: YandexHttpRequest): JSONObject {
         require(request.host in setOf("api.music.yandex.net", "oauth.yandex.ru"))
         require(request.path.startsWith('/') && !request.path.contains('?'))
@@ -42,7 +44,7 @@ internal class YandexHttpsTransport : YandexTransport {
             "${URLEncoder.encode(it.key, "UTF-8")}=${URLEncoder.encode(it.value, "UTF-8")}"
         }
         val suffix = if (request.method == "GET" && encoded.isNotEmpty()) "?$encoded" else ""
-        val connection = URL("https://${request.host}${request.path}$suffix").openConnection() as HttpURLConnection
+        val connection = connectionFactory(URL("https://${request.host}${request.path}$suffix"))
         try {
             connection.connectTimeout = 4000
             connection.readTimeout = 4000
@@ -165,7 +167,7 @@ internal class YandexMusicApi(private val transport: YandexTransport = YandexHtt
             Track(item.get("id").toString(), title,
                 (0 until artists.length()).joinToString(", ") { artists.getJSONObject(it).optString("name") },
                 if (albums.length() > 0) albums.getJSONObject(0).optString("title") else "", item.optLong("durationMs"))
-        }.filter { it.id.matches(Regex("[0-9]+")) && YandexTrackMatcher.matches(track, album, it, id != null) }
+        }.filter { it.id.matches(Regex("[0-9]+")) && (id == null || it.id == id) && YandexTrackMatcher.matches(track, album, it, id != null) }
             .distinctBy { it.id }
     }
 
