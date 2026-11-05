@@ -361,7 +361,7 @@ class MainActivity : Activity() {
         likeFeedback.visibility = View.VISIBLE
         MusicNotificationListener.toggleLike { result ->
             likeRequestPending = false
-            if (isDestroyed) return@toggleLike
+            if (isDestroyed || isFinishing) return@toggleLike
             likeFeedback.text = result.message
             likeFeedbackUntil = SystemClock.elapsedRealtime() + 10000L
             Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()

@@ -36,7 +36,7 @@ internal class YandexLoginDialog(
                 catch (_: Exception) { toast("Не удалось отключить аккаунт") }
             }
             .setNeutralButton("Сменить аккаунт") { _, _ -> begin() }
-            .setNegativeButton("Закрыть", null).show()
+            .setNegativeButton("Закрыть", null).show().also { dialog = it }
     }
 
     private fun begin() {
@@ -121,7 +121,7 @@ internal class YandexLoginDialog(
         dialog?.getButton(AlertDialog.BUTTON_NEUTRAL)?.isEnabled = false
     }
 
-    private fun current(request: Int) = generation == request && !activity.isDestroyed
+    private fun current(request: Int) = generation == request && !activity.isDestroyed && !activity.isFinishing && dialog?.isShowing == true
     private fun toast(message: String) = Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
     fun close() { generation++; handler.removeCallbacksAndMessages(null); dialog?.dismiss(); io.shutdownNow() }
 }

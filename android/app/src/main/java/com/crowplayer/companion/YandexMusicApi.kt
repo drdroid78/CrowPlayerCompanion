@@ -49,6 +49,7 @@ internal class YandexHttpsTransport(
             connection.connectTimeout = 4000
             connection.readTimeout = 4000
             connection.instanceFollowRedirects = false
+            connection.useCaches = false
             connection.requestMethod = request.method
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("User-Agent", "CrowPlayerCompanion/${BuildConfig.VERSION_NAME}")

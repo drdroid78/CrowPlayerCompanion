@@ -34,6 +34,7 @@ class YandexHttpsTransportTest {
         assertFalse(connection.url.toString().contains("private-token"))
         assertEquals("track-ids=101", connection.sent.toString("UTF-8"))
         assertFalse(connection.instanceFollowRedirects)
+        assertFalse(connection.useCaches)
         assertTrue(connection.closed)
     }
 
