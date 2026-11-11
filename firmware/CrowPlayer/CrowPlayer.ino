@@ -28,6 +28,7 @@ static DRAM_ATTR const int8_t encoderTable[16]={0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-
 static bool dirty=true,settingsDirty=false,otaReady=false;static uint32_t settingsAt=0,lastRender=0,lastTick=0,lastPoll=0,lastTouch=0,lastLed=0,effectAt=0;
 static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendingId=0,usbPendingAt=0;
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0;static float brightness=18;
+static int queuedVolume=0;
 static uint16_t drawBuffer[240*24];
 void IRAM_ATTR onEncoder(){
   uint8_t next=(digitalRead(45)<<1)|digitalRead(42);portENTER_CRITICAL_ISR(&encoderMux);
@@ -43,7 +44,11 @@ static void setHam(uint8_t cmd,int value){
   uint8_t raw=0;if(cmd==1){if(!model.ham.advertised(value))return;raw=0x51+value;}else if(cmd==2){value=cp::clamp(value,0,60);raw=0x42-value;}else if(cmd==3){value=cp::clamp(value,-60,0);raw=uint8_t(-value);}else if(cmd==4)raw=value?1:0;else return;
   ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
 }
-static void volume(int delta){if(model.subSelected&&model.screen==2){if(model.ham.sub!=-128)setHam(3,model.ham.sub+delta);}else if(model.ham.volume>=0)setHam(2,model.ham.volume+delta);else notify("Ожидание громкости",true);}
+static void volume(int delta){
+  uint8_t cmd=model.subSelected&&model.screen==2?3:2;
+  if(ampPending){if(ampCommand==cmd)queuedVolume=cp::clamp(queuedVolume+delta,-30,30);return;}
+  if(cmd==3){if(model.ham.sub!=-128)setHam(3,model.ham.sub+delta);}else if(model.ham.volume>=0)setHam(2,model.ham.volume+delta);else notify("Ожидание громкости",true);
+}
 static void media(const char*action){
   if(!model.usb){notify("Подключите USB",true);return;}if(usbPendingId)return;
   if(!strcmp(action,"like")&&(!model.likeAvailable||!model.likeKnown)){notify("Лайк недоступен",true);return;}
@@ -89,7 +94,8 @@ static void hamReceive(uint32_t now){
     if(cp::report(model.ham,p,now)){dirty=true;if(ampPending&&b[4]==ampCommand){int actual=ampCommand==1?model.ham.source:ampCommand==2?model.ham.volume:ampCommand==3?model.ham.sub:model.ham.mute;
       if(actual==ampTarget){ampPending=false;model.requestPending=false;effect=ampCommand==2?4:2;effectAt=now;}else if(ampAck){ampPending=false;model.requestPending=false;notify("HAM изменил значение",true);}}}
   }
-  if(ampPending&&now-ampPendingAt>1000){ampPending=false;model.requestPending=false;notify("HAM: нет подтверждения",true);}
+  if(ampPending&&now-ampPendingAt>1000){ampPending=false;queuedVolume=0;model.requestPending=false;notify("HAM: нет подтверждения",true);}
+  if(!ampPending&&queuedVolume){int delta=queuedVolume;queuedVolume=0;uint8_t cmd=ampCommand;if(model.ham.online(now)){if(cmd==2)setHam(2,model.ham.volume+delta);else if(cmd==3)setHam(3,model.ham.sub+delta);}}
   if(!ampPending&&now-lastPoll>200){static const uint8_t commands[]={0,4,2,3,1};sendHam(commands[pollIndex++%5],0x66);lastPoll=now;}
 }
 static void lighting(uint32_t now){
@@ -106,7 +112,7 @@ void setup(){
   lcd.init();lcd.setBrightness(46);leds.begin();leds.clear();leds.show();pinMode(13,OUTPUT);digitalWrite(13,LOW);delay(10);digitalWrite(13,HIGH);delay(50);Wire1.begin(6,7,400000);Wire1.setTimeOut(10);Wire1.beginTransmission(0x15);Wire1.write(0xFE);Wire1.write(0xFF);Wire1.endTransmission();
   amp.begin(115200,SERIAL_8N1,44,43,true);tablet.begin(115200);USB.productName("CrowPanel Skoda Edition");USB.begin();
   lv_init();auto*d=lv_display_create(240,240);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,drawBuffer,nullptr,sizeof drawBuffer,LV_DISPLAY_RENDER_MODE_PARTIAL);
-  lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<uint16_t*>(p));lv_display_flush_ready(display);});
+  lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<lgfx::rgb565_t*>(p));lv_display_flush_ready(display);});
   if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
 }
 void loop(){

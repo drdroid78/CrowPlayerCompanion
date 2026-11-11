@@ -16,7 +16,11 @@ struct Clock {
   void sync(uint64_t ms,uint32_t now,int zone){if(ms>=1577836800000ULL && ms<4102444800000ULL && zone>=-720 && zone<=840){epoch=ms;at=now;offset=zone;}}
   void advance(uint32_t now){if(epoch){epoch+=uint32_t(now-at);at=now;}}
   int minute() const {return int(((epoch/60000)+offset)%1440);}
-  void text(char* out) const {if(!epoch) strcpy(out,"--:--"); else snprintf(out,6,"%02d:%02d",minute()/60,minute()%60);}
+  void text(char* out) const {
+    if(!epoch){strcpy(out,"--:--");return;}
+    unsigned m=unsigned(minute())%1440;
+    out[0]='0'+m/600;out[1]='0'+m/60%10;out[2]=':';out[3]='0'+m%60/10;out[4]='0'+m%10;out[5]=0;
+  }
 };
 inline bool daytime(const Settings&s,int minute){int d=s.dayHour*60,n=s.nightHour*60;return d==n || (d<n ? minute>=d&&minute<n : minute>=d||minute<n);}
 // A full four-transition cycle emits one step; a diagonal jump invalidates partial motion.
@@ -54,12 +58,14 @@ inline const char* sourceName(int id){static const char* names[]={"OPT","COAX","
 struct Packet {uint8_t bytes[68]={};size_t size=0;};
 inline Packet packet(uint8_t group,uint8_t command,uint8_t type,const uint8_t*data=nullptr,size_t n=0){
   Packet p;if(n>61)return p;p.size=n+7;p.bytes[0]=0xAA;p.bytes[1]=0x77;p.bytes[2]=n+3;p.bytes[3]=group;p.bytes[4]=command;p.bytes[5]=type;
-  if(n)memcpy(p.bytes+6,data,n);uint8_t sum=0;for(size_t i=2;i<p.size-1;i++)sum+=p.bytes[i];p.bytes[p.size-1]=uint8_t(-sum);return p;
+  if(n)memcpy(p.bytes+6,data,n);
+  uint8_t sum=0;for(size_t i=2;i<p.size-1;i++)sum+=p.bytes[i];p.bytes[p.size-1]=uint8_t(-sum);return p;
 }
 struct HamParser {
   Packet p; uint32_t lastByte=0;
   bool feed(uint8_t b,uint32_t now){
-    if(p.size&&uint32_t(now-lastByte)>30)p.size=0;lastByte=now;
+    if(p.size&&uint32_t(now-lastByte)>30)p.size=0;
+    lastByte=now;
     if(!p.size){if(b==0xAA)p.bytes[p.size++]=b;return false;}
     if(p.size==1){if(b==0x77)p.bytes[p.size++]=b;else if(b!=0xAA)p.size=0;return false;}
     if(p.size==2&&(b<3||b>64)){p.size=0;return false;}
