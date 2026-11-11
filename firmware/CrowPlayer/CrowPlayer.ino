@@ -1,6 +1,7 @@
 // Native USB companion + inverted 1.8 V Hellion UART (external level shifter).
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
+#include <lvgl.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
