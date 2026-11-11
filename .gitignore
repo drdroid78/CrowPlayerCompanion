@@ -3,3 +3,4 @@
 local.properties
 *.apk
 *.zip
+firmware/CrowPlayer/src/fonts/cp_font_*.c
