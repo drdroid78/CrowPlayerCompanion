@@ -25,7 +25,7 @@ jobs:
         run: |
           git clone --depth 1 --branch v9.1.0 https://github.com/lvgl/lvgl.git build/lvgl
           cmake -S firmware/preview -B build/preview-app -DLVGL_DIR="$PWD/build/lvgl" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/preview-app -j4
+          cmake --build build/preview-app --target panel_preview -j4
           ./build/preview-app/panel_preview build/preview
           python -m pip install Pillow==11.3.0
           python scripts/panel-preview.py build/preview
@@ -53,7 +53,7 @@ jobs:
           key: crowpanel-arduino-338-lvgl910-lgfx1226-v1
       - name: Compile ESP32-S3R8 native USB
         run: |
-          arduino-cli compile --fqbn 'esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi' --build-property 'compiler.cpp.extra_flags=-DLV_CONF_SKIP' --build-property 'compiler.c.extra_flags=-DLV_CONF_SKIP' --output-dir build/panel firmware/CrowPlayer
+          arduino-cli compile --fqbn 'esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi' --build-property 'compiler.cpp.extra_flags=-DLV_CONF_SKIP' --build-property 'compiler.c.extra_flags=-DLV_CONF_SKIP' --build-property 'compiler.S.extra_flags=-DLV_CONF_SKIP' --output-dir build/panel firmware/CrowPlayer
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -11,7 +11,7 @@ static void disc(int x,int y,int r,uint32_t c){auto*o=lv_obj_create(root);lv_obj
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
   auto*a=lv_arc_create(root);lv_obj_remove_style_all(a);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);lv_arc_set_bg_angles(a,start,end);lv_obj_set_style_arc_width(a,width,LV_PART_MAIN);lv_obj_set_style_arc_color(a,col(c),LV_PART_MAIN);lv_obj_set_style_arc_rounded(a,true,LV_PART_MAIN);lv_obj_set_style_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);lv_obj_remove_flag(a,LV_OBJ_FLAG_CLICKABLE);
 }
-static void ticks(){for(int i=0;i<60;i++){float a=i*6*3.14159265f/180;int r=i%5?111:108;static lv_point_precise_t pts[60][2];pts[i][0]={float(120+sin(a)*r),float(120-cos(a)*r)};pts[i][1]={float(120+sin(a)*115),float(120-cos(a)*115)};auto*l=lv_line_create(root);lv_line_set_points(l,pts[i],2);lv_obj_set_style_line_color(l,col(0x34363C),0);lv_obj_set_style_line_width(l,1,0);}}
+static void ticks(){for(int i=0;i<60;i++){float a=i*6*3.14159265f/180;int r=i%5?111:108;static lv_point_precise_t pts[60][2];pts[i][0]={lv_value_precise_t(120+sin(a)*r),lv_value_precise_t(120-cos(a)*r)};pts[i][1]={lv_value_precise_t(120+sin(a)*115),lv_value_precise_t(120-cos(a)*115)};auto*l=lv_line_create(root);lv_line_set_points(l,pts[i],2);lv_obj_set_style_line_color(l,col(0x34363C),0);lv_obj_set_style_line_width(l,1,0);}}
 static void nav(int screen){for(int i=0;i<5;i++)disc(100+i*10,224,i==screen?3:2,i==screen?accent:0x464950);}
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",178,34,30,&cp_font_16,liked?accent:0xD0D2D5);}
