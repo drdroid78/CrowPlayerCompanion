@@ -54,6 +54,8 @@ jobs:
       - name: Compile ESP32-S3R8 native USB
         run: |
           arduino-cli compile --fqbn 'esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi' --build-property 'compiler.cpp.extra_flags=-DLV_CONF_SKIP' --build-property 'compiler.c.extra_flags=-DLV_CONF_SKIP' --build-property 'compiler.S.extra_flags=-DLV_CONF_SKIP' --output-dir build/panel firmware/CrowPlayer
+      - name: Verify ESP32 display buffer alignment
+        run: python scripts/panel-check-map.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

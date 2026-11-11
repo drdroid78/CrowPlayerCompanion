@@ -3,7 +3,8 @@
 #include <filesystem>
 #include <vector>
 #include <string>
-static uint16_t pixels[240*240],buffer[240*24];
+static uint16_t pixels[240*240];
+alignas(LV_DRAW_BUF_ALIGN) static uint16_t buffer[240*24];
 static void flush(lv_display_t*d,const lv_area_t*a,uint8_t*data){auto*p=reinterpret_cast<uint16_t*>(data);for(int y=a->y1;y<=a->y2;y++)for(int x=a->x1;x<=a->x2;x++)pixels[y*240+x]=*p++;lv_display_flush_ready(d);}
 static void save(const std::string&name){lv_refr_now(nullptr);std::ofstream out(name,std::ios::binary);out<<"P6\n240 240\n255\n";for(auto c:pixels){char rgb[]={char(((c>>11)&31)*255/31),char(((c>>5)&63)*255/63),char((c&31)*255/31)};out.write(rgb,3);}}
 int main(int argc,char**argv){

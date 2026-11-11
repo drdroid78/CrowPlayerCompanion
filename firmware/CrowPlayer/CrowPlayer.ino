@@ -30,7 +30,7 @@ static bool dirty=true,settingsDirty=false,otaReady=false;static uint32_t settin
 static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendingId=0,usbPendingAt=0;
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0;static float brightness=18;
 static int queuedVolume=0;
-static uint16_t drawBuffer[240*24];
+alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*24];
 static const char* volatile bootStage="starting";
 static volatile uint32_t flushCount=0,loopCount=0;
 static volatile bool displayOk=false;
