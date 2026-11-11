@@ -35,7 +35,7 @@ void render(const Model&m,uint32_t now){
     label("ЗВУК",60,28,120,&cp_font_12,0xA5A9AF);ring(82,104,53,135,405,0x292C33,3);if(ham&&m.ham.volume>=0)ring(82,104,53,135,135+std::max(1,m.ham.volume*270/66),accent,4);
     if(ham&&m.ham.volume>=0)snprintf(b,sizeof b,"%d",m.ham.volume);else strcpy(b,"--");label(b,37,78,90,&cp_font_44);label("ГРОМКОСТЬ",30,148,105,&cp_font_12,m.subSelected?0xA5A9AF:accent);
     ring(177,104,33,135,405,0x292C33,2);if(ham&&m.ham.sub!=-128)snprintf(b,sizeof b,"%d",m.ham.sub);else strcpy(b,"--");label(b,147,91,60,&cp_font_16);label("САБ",148,148,58,&cp_font_12,m.subSelected?accent:0xA5A9AF);
-    label(ham?(m.ham.mute==1?"MUTE · ВКЛ":"MUTE · ВЫКЛ"):"HAM · нет связи",40,182,160,&cp_font_16,ham&&m.ham.mute==1?accent:0xD0D2D5);
+    label(ham?(m.ham.mute<0?"MUTE · --":m.ham.mute==1?"MUTE · ВКЛ":"MUTE · ВЫКЛ"):"HAM · нет связи",40,182,160,&cp_font_16,ham&&m.ham.mute==1?accent:0xD0D2D5);
   }else if(m.screen==3){
     disc(120,118,32,0x101218);ring(120,118,34,0,359,accent,2);label(ham?sourceName(m.ham.source):"--",90,109,60,&cp_font_16);
     if(!ham||!m.ham.count)label("Ожидание HAM",45,174,150,&cp_font_12,0xA5A9AF);
