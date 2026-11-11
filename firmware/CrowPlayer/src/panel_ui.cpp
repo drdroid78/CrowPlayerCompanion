@@ -37,7 +37,7 @@ void render(const Model&m,uint32_t now){
     ring(177,104,33,135,405,0x292C33,2);if(ham&&m.ham.sub!=-128)snprintf(b,sizeof b,"%d",m.ham.sub);else strcpy(b,"--");label(b,147,91,60,&cp_font_16);label("САБ",148,148,58,&cp_font_12,m.subSelected?accent:0xA5A9AF);
     label(ham?(m.ham.mute==1?"MUTE · ВКЛ":"MUTE · ВЫКЛ"):"HAM · нет связи",40,182,160,&cp_font_16,ham&&m.ham.mute==1?accent:0xD0D2D5);
   }else if(m.screen==3){
-    label("ИСТОЧНИК",55,27,130,&cp_font_12,0xA5A9AF);disc(120,118,32,0x101218);ring(120,118,34,0,359,accent,2);label(ham?sourceName(m.ham.source):"--",90,109,60,&cp_font_16);
+    disc(120,118,32,0x101218);ring(120,118,34,0,359,accent,2);label(ham?sourceName(m.ham.source):"--",90,109,60,&cp_font_16);
     if(!ham||!m.ham.count)label("Ожидание HAM",45,174,150,&cp_font_12,0xA5A9AF);
     for(int i=0;ham&&i<m.ham.count;i++){float a=(-90+i*360.0/m.ham.count)*3.14159265/180;int x=120+cos(a)*76,y=118+sin(a)*76;bool active=m.ham.sources[i]==m.ham.source;disc(x,y,21,active?accent:0x22252C);label(sourceName(m.ham.sources[i]),x-23,y-7,46,&cp_font_12,active?0x050609:0xF5F5F5);}
   }else{

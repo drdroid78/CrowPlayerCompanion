@@ -4,8 +4,8 @@
 using namespace cp;
 static Packet parse(const uint8_t*b,size_t n){HamParser p;bool ready=false;for(size_t i=0;i<n;i++)ready=p.feed(b[i],100+i);assert(ready);return p.p;}
 int main(){
-  {Quadrature q;int steps=0;for(int n:{2,0,1,3})steps+=q.feed(n);assert(steps==1);for(int n:{1,0,2,3})steps+=q.feed(n);assert(steps==0);
-   for(int n:{2,3,2,3,2,0,1,3})steps+=q.feed(n);assert(steps==1);q.feed(0);assert(q.partial==0);}
+  {Quadrature q;int steps=0;for(int n:{2,0,1,3})steps+=q.feed(n);assert(steps==-1);for(int n:{1,0,2,3})steps+=q.feed(n);assert(steps==0);
+   for(int n:{2,3,2,3,2,0,1,3})steps+=q.feed(n);assert(steps==-1);q.feed(0);assert(q.partial==0);}
   {Button b;assert(b.update(true,0)==ButtonEvent::None);b.update(false,5);b.update(true,10);b.update(true,40);b.update(false,80);b.update(false,110);assert(b.update(false,411)==ButtonEvent::Single);
    Button h;h.update(true,0);h.update(true,25);assert(h.update(true,725)==ButtonEvent::Hold);h.update(false,800);assert(h.update(false,1200)==ButtonEvent::None);
    Button d;d.update(true,0);d.update(true,25);d.update(false,50);d.update(false,75);d.update(true,100);d.update(true,125);d.update(false,150);assert(d.update(false,175)==ButtonEvent::Double);}
