@@ -1,329 +1,120 @@
-/*
- * Project author: DrDroid78
- * CrowPlayer for Elecrow CrowPanel 1.28-inch HMI ESP32-S3 rotary display.
- * BLE HID media remote + BLE GATT metadata receiver for CrowPlayer Companion.
- *
- * Controls:
- *   encoder clockwise / counter-clockwise : volume up / down
- *   single click                           : play / pause
- *   double click                           : next track
- *   hold for 700 ms                        : mute
- */
+// Native USB companion + inverted 1.8 V Hellion UART (external level shifter).
 #include <Arduino.h>
-#include <math.h>
-#include <time.h>
 #include <LovyanGFX.hpp>
-#include <NimBLEDevice.h>
-#include <HijelHID_BLEKeyboard.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
+#include <Preferences.h>
+#include <Wire.h>
+#include <USB.h>
+#include <USBCDC.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include "crowplayer_secrets.h"
-#include "skoda_splash.h"
-
-static constexpr int PIN_LCD_SCLK=10, PIN_LCD_MOSI=11, PIN_LCD_DC=3;
-static constexpr int PIN_LCD_CS=9, PIN_LCD_RST=14, PIN_LCD_BL=46;
-static constexpr int PIN_POWER_GATE=1;
-static constexpr int PIN_NEOPIXEL=48;
-static constexpr int NEOPIXEL_COUNT=5;
-static constexpr uint8_t SKODA_GREEN_R=0, SKODA_GREEN_G=150, SKODA_GREEN_B=65;
-static constexpr uint8_t NEOPIXEL_BRIGHTNESS=42;
-static constexpr int PIN_ENC_A=45, PIN_ENC_B=42, PIN_ENC_SW=41;
-
-class CrowDisplay : public lgfx::LGFX_Device {
-  lgfx::Panel_GC9A01 _panel;
-  lgfx::Bus_SPI _bus;
-public:
-  CrowDisplay() {
-    auto b=_bus.config();
-    b.spi_host=SPI2_HOST; b.spi_mode=0; b.freq_write=40000000;
-    b.freq_read=16000000; b.spi_3wire=true; b.use_lock=true;
-    b.dma_channel=SPI_DMA_CH_AUTO; b.pin_sclk=PIN_LCD_SCLK;
-    b.pin_mosi=PIN_LCD_MOSI; b.pin_miso=-1; b.pin_dc=PIN_LCD_DC;
-    _bus.config(b); _panel.setBus(&_bus);
-    auto p=_panel.config(); p.pin_cs=PIN_LCD_CS; p.pin_rst=PIN_LCD_RST;
-    p.pin_busy=-1; p.memory_width=240; p.memory_height=240;
-    p.panel_width=240; p.panel_height=240; p.offset_x=0; p.offset_y=0;
-    p.invert=true; p.rgb_order=false; p.dlen_16bit=false;
-    _panel.config(p); setPanel(&_panel);
+#include "src/panel_ui.h"
+class CrowDisplay:public lgfx::LGFX_Device {
+  lgfx::Panel_GC9A01 panel;lgfx::Bus_SPI bus;lgfx::Light_PWM light;
+ public:CrowDisplay(){
+    auto b=bus.config();b.spi_host=SPI2_HOST;b.spi_mode=0;b.freq_write=40000000;b.spi_3wire=true;b.use_lock=true;b.dma_channel=SPI_DMA_CH_AUTO;b.pin_sclk=10;b.pin_mosi=11;b.pin_miso=-1;b.pin_dc=3;bus.config(b);panel.setBus(&bus);
+    auto p=panel.config();p.pin_cs=9;p.pin_rst=14;p.pin_busy=-1;p.memory_width=240;p.memory_height=240;p.panel_width=240;p.panel_height=240;p.invert=true;p.rgb_order=false;panel.config(p);
+    auto l=light.config();l.pin_bl=46;l.invert=false;l.freq=12000;l.pwm_channel=7;light.config(l);panel.setLight(&light);setPanel(&panel);
   }
 };
-
-CrowDisplay lcd;
-Adafruit_NeoPixel accentLeds(NEOPIXEL_COUNT, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
-HijelHID_BLEKeyboard keyboard("CrowPlayer", "CrowPlayer", 100);
-static const char* SERVICE_UUID="7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e";
-static const char* META_UUID   ="7d2ea28b-f7bd-485a-bd9d-92ad6ecfe93e";
-static const char* ART_UUID    ="7d2ea28c-f7bd-485a-bd9d-92ad6ecfe93e";
-static NimBLECharacteristic* metaChar=nullptr;
-static NimBLECharacteristic* artChar=nullptr;
-static constexpr uint16_t ART_W=80, ART_H=80, ART_PIXELS=ART_W*ART_H;
-static uint16_t* albumPixels=nullptr;
-static uint16_t artExpected=0, artReceived=0;
-
-String trackTitle="Waiting for music";
-String trackArtist="Open Yandex Music";
-String playback="paused";
-int volumeEstimate=50; // Estimate only; system volume is not readable over HID.
-uint32_t trackPositionMs=0, trackDurationMs=0, lastProgressDraw=0, positionReceivedAt=0;
-bool nightMode=false;
-uint8_t screenBrightness=75, ledBrightness=42;
-uint32_t syncedEpochMs=0, epochReceivedAt=0, lastLedFrame=0, volumeOverlayUntil=0;
-bool autoNight=true;
-bool encoderSeek=false;
-int lastA=HIGH;
-bool lastButton=HIGH;
-uint32_t buttonDownAt=0, lastClickAt=0;
-bool longHandled=false, waitingSecondClick=false;
-bool screenDirty=true;
-bool lastPaired=false;
-
-class ArtworkCallbacks : public NimBLECharacteristicCallbacks {
-  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
-    std::string packet=c->getValue();
-    if(packet.size()<4 || albumPixels==nullptr) return;
-    uint16_t offset=((uint8_t)packet[0]<<8)|(uint8_t)packet[1];
-    uint16_t total=((uint8_t)packet[2]<<8)|(uint8_t)packet[3];
-    size_t bytes=packet.size()-4;
-    if(total!=ART_PIXELS*2 || offset+bytes>total || (bytes&1)) return;
-    if(offset==0) { artExpected=total; artReceived=0; }
-    if(total!=artExpected || offset!=artReceived) return;
-    memcpy(reinterpret_cast<uint8_t*>(albumPixels)+offset,packet.data()+4,bytes);
-    artReceived+=bytes;
-    if(artReceived==artExpected) { screenDirty=true; Serial.println("Album artwork received"); }
-  }
-};
-
-class MetaCallbacks : public NimBLECharacteristicCallbacks {
-  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
-    std::string raw=c->getValue();
-    if(raw.empty()) return;
-    JsonDocument doc;
-    if(deserializeJson(doc, raw.c_str())) return;
-    const char* t=doc["title"] | "Unknown track";
-    const char* a=doc["artist"] | "Unknown artist";
-    const char* s=doc["state"] | "paused";
-    trackTitle=String(t).substring(0,64);
-    trackArtist=String(a).substring(0,64);
-    playback=String(s);
-    trackPositionMs=doc["positionMs"] | 0UL;
-    trackDurationMs=doc["durationMs"] | 0UL;
-    positionReceivedAt=millis();
-    nightMode=doc["nightMode"] | false;
-    screenBrightness=constrain((int)(doc["screenBrightness"] | 75),5,100);
-    ledBrightness=constrain((int)(doc["ledBrightness"] | 42),0,100);
-    syncedEpochMs=doc["epochMs"] | 0UL; epochReceivedAt=millis();
-    autoNight=doc["autoNight"] | true;
-    encoderSeek=doc["encoderSeek"] | false;
-    accentLeds.setBrightness((uint8_t)(ledBrightness*255/100)); accentLeds.show();
-    screenDirty=true;
-  }
-};
-
-void drawCentered(const String& value, int y, int size, uint16_t color) {
-  lcd.setTextSize(size); lcd.setTextColor(color, TFT_BLACK);
-  lcd.setTextDatum(textdatum_t::middle_center);
-  lcd.drawString(value,120,y);
+CrowDisplay lcd;USBCDC tablet;HardwareSerial amp(1);Preferences prefs;
+Adafruit_NeoPixel leds(5,48,NEO_GRB+NEO_KHZ800);
+cp::Model model;cp::HamParser parser;cp::LineBuffer usbLine;cp::Button button;
+static portMUX_TYPE encoderMux=portMUX_INITIALIZER_UNLOCKED;
+static volatile int32_t encoderSteps=0;static volatile uint8_t encoderPrevious=3;static volatile int8_t encoderPartial=0;
+static DRAM_ATTR const int8_t encoderTable[16]={0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
+static bool dirty=true,settingsDirty=false,otaReady=false;static uint32_t settingsAt=0,lastRender=0,lastTick=0,lastPoll=0,lastTouch=0,lastLed=0,effectAt=0;
+static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendingId=0,usbPendingAt=0;
+static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0;static float brightness=18;
+static uint16_t drawBuffer[240*24];
+void IRAM_ATTR onEncoder(){
+  uint8_t next=(digitalRead(45)<<1)|digitalRead(42);portENTER_CRITICAL_ISR(&encoderMux);
+  if((encoderPrevious^next)==3)encoderPartial=0;else encoderPartial+=encoderTable[(encoderPrevious<<2)|next];encoderPrevious=next;
+  if(encoderPartial>=4){encoderSteps++;encoderPartial=0;}else if(encoderPartial<=-4){encoderSteps--;encoderPartial=0;}portEXIT_CRITICAL_ISR(&encoderMux);
 }
-
-// Fixed emerald-green accent lighting inspired by the requested Škoda theme.
-void updateAccentAnimation() {
-  uint32_t now=millis();
-  if(now-lastLedFrame<90) return;
-  lastLedFrame=now;
-  uint8_t base=(uint8_t)(ledBrightness*255/100);
-  if(playback=="playing") {
-    uint8_t pulse=(uint8_t)(35 + 25*(1.0f + sinf(now/420.0f)));
-    for(int i=0;i<NEOPIXEL_COUNT;i++) {
-      uint8_t wave=(uint8_t)((i*19 + (now/35))%70);
-      uint8_t level=(uint8_t)min(255,(int)base*(pulse+wave)/100);
-      accentLeds.setPixelColor(i,accentLeds.Color(0,(uint16_t)SKODA_GREEN_G*level/255,(uint16_t)SKODA_GREEN_B*level/255));
-    }
-  } else {
-    for(int i=0;i<NEOPIXEL_COUNT;i++) accentLeds.setPixelColor(i,accentLeds.Color(0,(uint16_t)SKODA_GREEN_G*base/255,(uint16_t)SKODA_GREEN_B*base/255));
-  }
-  accentLeds.show();
+static void notify(const char*s,bool error=false){strlcpy(model.notice,s,sizeof model.notice);model.noticeUntil=millis()+1500;effect=error?3:2;effectAt=millis();dirty=true;}
+static void saveLater(){settingsDirty=true;settingsAt=millis();dirty=true;}
+static void activity(){model.activeAt=millis();if(model.screen==0){model.screen=1;dirty=true;}}
+static void sendHam(uint8_t cmd,uint8_t op,const uint8_t*data=nullptr,size_t n=0){auto p=cp::packet(1,cmd,op,data,n);amp.write(p.bytes,p.size);}
+static void setHam(uint8_t cmd,int value){
+  if(!model.ham.online(millis())){notify("Нет связи с HAM",true);return;}if(ampPending)return;
+  uint8_t raw=0;if(cmd==1){if(!model.ham.advertised(value))return;raw=0x51+value;}else if(cmd==2){value=cp::clamp(value,0,60);raw=0x42-value;}else if(cmd==3){value=cp::clamp(value,-60,0);raw=uint8_t(-value);}else if(cmd==4)raw=value?1:0;else return;
+  ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
 }
-
-void setupOta() {
-  if(strlen(CROWPLAYER_WIFI_SSID)==0) { Serial.println("OTA disabled: configure Wi-Fi in crowplayer_secrets.h"); return; }
-  WiFi.mode(WIFI_STA); WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);
-  uint32_t started=millis();
-  while(WiFi.status()!=WL_CONNECTED && millis()-started<12000) delay(250);
-  if(WiFi.status()!=WL_CONNECTED) { Serial.println("OTA Wi-Fi not connected; USB upload remains available"); return; }
-  ArduinoOTA.setHostname("CrowPlayer-Skoda");
-  ArduinoOTA.begin();
-  Serial.print("OTA ready at "); Serial.println(WiFi.localIP());
+static void volume(int delta){if(model.subSelected&&model.screen==2){if(model.ham.sub!=-128)setHam(3,model.ham.sub+delta);}else if(model.ham.volume>=0)setHam(2,model.ham.volume+delta);else notify("Ожидание громкости",true);}
+static void media(const char*action){
+  if(!model.usb){notify("Подключите USB",true);return;}if(usbPendingId)return;
+  if(!strcmp(action,"like")&&(!model.likeAvailable||!model.likeKnown)){notify("Лайк недоступен",true);return;}
+  StaticJsonDocument<768>d;usbPendingId=nextId++;usbPendingAt=millis();d["v"]=1;d["type"]="command";d["id"]=usbPendingId;d["action"]=action;d["title"]=model.title;d["artist"]=model.artist;
+  if(!strcmp(action,"like")){d["liked"]=!model.liked;model.likePending=true;}serializeJson(d,tablet);tablet.println();dirty=true;
 }
-
-void setAccentLighting() {
-  accentLeds.begin();
-  accentLeds.setBrightness(NEOPIXEL_BRIGHTNESS);
-  const uint32_t green=accentLeds.Color(SKODA_GREEN_R,SKODA_GREEN_G,SKODA_GREEN_B);
-  for(int i=0;i<NEOPIXEL_COUNT;i++) accentLeds.setPixelColor(i,green);
-  accentLeds.show();
+static void editSetting(int delta){auto&s=model.settings;switch(model.setting){case 0:s.theme=(s.theme+delta%8+8)%8;break;case 1:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 2:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 3:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 4:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 5:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 6:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 7:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;}saveLater();}
+static void rotate(int delta){activity();if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
+static void tap(int x,int y){
+  if(model.screen==0){activity();return;}activity();
+  if(model.screen==1){if(x>=170&&y<80)media("like");else if(y>=96&&y<148){if(x<90)media("previous");else if(x>150)media("next");else media("play_pause");}}
+  else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
+  else if(model.screen==3&&model.ham.online(millis())){for(int i=0;i<model.ham.count;i++){float a=(-90+i*360.0/model.ham.count)*3.14159265/180;int sx=120+cos(a)*76,sy=118+sin(a)*76;if((x-sx)*(x-sx)+(y-sy)*(y-sy)<25*25)setHam(1,model.ham.sources[i]);}}
+  else if(model.screen==4){if(y>=95&&y<145){model.edit=!model.edit;saveLater();}else{model.setting=(model.setting+(y<95?7:1))%8;model.edit=false;dirty=true;}}
 }
-
-// Startup splash: circular CrowPlayer Škoda artwork, rendered full-screen.
-void drawStartupSplash() {
-  lcd.fillScreen(TFT_BLACK);
-  lcd.pushImage(0, 0, 240, 240, SKODA_SPLASH_RGB565);
-  delay(2200);
-}
-
-void drawPairing() {
-  lcd.fillScreen(TFT_BLACK);
-  lcd.drawCircle(120,120,113,0x5AEB); lcd.drawCircle(120,120,107,0x3186);
-  drawCentered("CROWPLAYER",54,2,TFT_WHITE);
-  lcd.drawCircle(120,105,29,0x5AEB); lcd.drawCircle(120,105,20,0x5AEB);
-  lcd.drawLine(120,82,120,105,0x5AEB);
-  drawCentered("BLUETOOTH",153,2,0x5AEB);
-  drawCentered("Pair with CrowPlayer",180,1,TFT_WHITE);
-  drawCentered("in tablet Bluetooth settings",198,1,0xBDF7);
-  drawCentered("Then open CrowPlayer Companion",220,1,0x7BEF);
-}
-
-void drawPlayer() {
-  lcd.fillScreen(TFT_BLACK);
-  lcd.drawCircle(120,120,114,0x2925); lcd.drawCircle(120,120,108,0x4208);
-  // 80x80 RGB565 album artwork is transferred in ordered BLE chunks.
-  if(albumPixels && artReceived==ART_PIXELS*2) lcd.pushImage(80,28,ART_W,ART_H,albumPixels);
-  else { lcd.fillRoundRect(76,24,88,88,12,0x4018); lcd.fillCircle(120,68,23,0x801F); lcd.fillCircle(120,68,9,0x4018); }
-  String title=trackTitle;
-  if(title.length()>22) title=title.substring(0,21)+"…";
-  String artist=trackArtist;
-  if(artist.length()>24) artist=artist.substring(0,23)+"…";
-  drawCentered(title,132,1,TFT_WHITE);
-  drawCentered(artist,151,1,0xBDF7);
-  lcd.drawRoundRect(48,168,144,4,2,0x4208);
-  uint32_t shownPosition=trackPositionMs;
-  if(playback=="playing" && trackDurationMs>0) shownPosition=min(trackDurationMs,trackPositionMs+(millis()-positionReceivedAt));
-  int progressWidth = trackDurationMs > 0 ? (int)(144UL * min(shownPosition,trackDurationMs) / trackDurationMs) : 0;
-  if(progressWidth>0) lcd.fillRoundRect(48,168,progressWidth,4,2,0xF02D);
-  uint32_t elapsed=shownPosition/1000, total=trackDurationMs/1000;
-  char timeText[24]; snprintf(timeText,sizeof(timeText),"%lu:%02lu / %lu:%02lu",elapsed/60,elapsed%60,total/60,total%60);
-  lcd.setTextDatum(textdatum_t::middle_center); lcd.setTextSize(1); lcd.setTextColor(0x7BEF,TFT_BLACK); lcd.drawString(timeText,120,180);
-  lcd.fillTriangle(70,199,82,191,82,207,0xF02D); lcd.fillRect(86,191,3,16,0xF02D);
-  if(playback=="playing") {
-    lcd.fillRect(111,190,5,18,TFT_WHITE); lcd.fillRect(122,190,5,18,TFT_WHITE);
-  } else {
-    lcd.fillTriangle(111,189,111,209,130,199,TFT_WHITE);
-  }
-  lcd.fillTriangle(170,199,158,191,158,207,0xF02D); lcd.fillRect(154,191,3,16,0xF02D);
-  lcd.drawArc(120,120,116,111,220,320,0x4208,0x4208);
-  int volEnd=220+(int)(100*volumeEstimate/100);
-  if(volEnd>220) lcd.drawArc(120,120,116,111,220,volEnd,0xF02D,0xF02D);
-  drawCentered(String("VOL ")+volumeEstimate+"%",226,1,0xF02D);
-  if(millis()<volumeOverlayUntil) {
-    lcd.fillRoundRect(35,88,170,64,12,0x18E3);
-    drawCentered("VOLUME",101,1,0xBDF7);
-    drawCentered(String(volumeEstimate)+"%",127,3,0xF02D);
-    lcd.drawRoundRect(55,139,130,5,2,0x4208);
-    lcd.fillRoundRect(55,139,130*volumeEstimate/100,5,2,0xF02D);
-  }
-  lcd.setTextDatum(textdatum_t::top_center); lcd.setTextSize(1);
-  lcd.setTextColor(0x7BEF,TFT_BLACK); lcd.drawString("CROWPLAYER",120,8);
-  if(syncedEpochMs>0) {
-    time_t raw=(time_t)((syncedEpochMs+(millis()-epochReceivedAt))/1000);
-    struct tm *clockNow=gmtime(&raw);
-    if(clockNow) { char clockText[6]; snprintf(clockText,sizeof(clockText),"%02d:%02d",clockNow->tm_hour,clockNow->tm_min); lcd.drawString(clockText,120,18); }
+static bool readTouch(uint8_t reg,uint8_t*out,size_t n){Wire1.beginTransmission(0x15);Wire1.write(reg);if(Wire1.endTransmission(false)!=0)return false;if(Wire1.requestFrom(uint8_t(0x15),uint8_t(n))!=n)return false;for(size_t i=0;i<n;i++)out[i]=Wire1.read();return true;}
+static void touch(uint32_t now){
+  if(now-lastTouch<12)return;lastTouch=now;static bool held=false;static int startX,startY,endX,endY;static uint32_t downAt=0;uint8_t b[5];
+  if(!readTouch(2,b,5))return;bool pressed=(b[0]&15)>0;int x=((b[1]&15)<<8)|b[2],y=((b[3]&15)<<8)|b[4];if(pressed&&(x>=240||y>=240))return;
+  if(pressed&&!held){held=true;startX=endX=x;startY=endY=y;downAt=now;}else if(pressed){endX=x;endY=y;}
+  else if(held){held=false;int dx=endX-startX,dy=endY-startY;bool asleep=model.screen==0;activity();if(asleep)return;
+    if(abs(dx)>35&&abs(dx)>abs(dy)*1.3){model.screen=(model.screen+(dx<0?1:4))%5;model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
+    else if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else volume(cp::clamp(-dy/12,-10,10));}
+    else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
   }
 }
-
-void sendMedia(uint16_t key) {
-  if(keyboard.isPaired()) keyboard.tap(key);
+static void usbReceive(uint32_t now){
+  int budget=512;while(budget--&&tablet.available()){if(!usbLine.feed(tablet.read()))continue;StaticJsonDocument<3072>d;if(deserializeJson(d,usbLine.data)||d["v"]!=1)continue;const char*type=d["type"]|"";
+    if(!strcmp(type,"state")){
+      const char*title=d["title"]|"";const char*artist=d["artist"]|"";bool changed=strcmp(title,model.title)||strcmp(artist,model.artist);
+      strlcpy(model.title,title,sizeof model.title);strlcpy(model.artist,artist,sizeof model.artist);model.playing=d["state"]=="playing";model.position=d["positionMs"]|0u;model.duration=d["durationMs"]|0u;model.positionAt=now;
+      model.likeKnown=d["liked"].is<bool>();model.liked=d["liked"]|false;model.likeAvailable=d["likeAvailable"]|false;if(changed){model.likePending=false;usbPendingId=0;}
+      model.clock.sync(d["epochMs"]|uint64_t(0),now,d["utcOffsetMinutes"]|180);model.lastUsb=now;model.usb=true;dirty=true;
+    }else if(!strcmp(type,"heartbeat")){model.lastUsb=now;model.usb=true;}
+    else if(!strcmp(type,"result")&&usbPendingId&&d["id"].as<uint32_t>()==usbPendingId){if(d["ok"]==true){if(model.likePending&&d["liked"].is<bool>()){model.liked=d["liked"].as<bool>();model.likeKnown=true;}notify("Подтверждено");}else notify("Команда не выполнена",true);usbPendingId=0;model.likePending=false;}
+  }
+  if(model.usb&&(!tablet||uint32_t(now-model.lastUsb)>5000)){model.usb=false;model.playing=false;usbPendingId=0;model.likePending=false;notify("USB отключён",true);}
+  if(usbPendingId&&now-usbPendingAt>3000){usbPendingId=0;model.likePending=false;notify("Нет подтверждения",true);}
 }
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(PIN_POWER_GATE,OUTPUT); digitalWrite(PIN_POWER_GATE,HIGH);
-  ledcAttach(PIN_LCD_BL,5000,8); ledcWrite(PIN_LCD_BL,255);
-  setAccentLighting();
-  albumPixels=(uint16_t*)ps_malloc(ART_PIXELS*sizeof(uint16_t));
-  pinMode(PIN_ENC_A,INPUT_PULLUP); pinMode(PIN_ENC_B,INPUT_PULLUP);
-  pinMode(PIN_ENC_SW,INPUT_PULLUP); lastA=digitalRead(PIN_ENC_A);
-
-  lcd.init(); lcd.setRotation(0); lcd.fillScreen(TFT_BLACK);
-  drawStartupSplash();
-  drawPairing();
-
-  keyboard.setLogLevel(HIDLogLevel::Normal);
-  keyboard.begin();
-  setupOta();
-
-  // Attach our metadata service to the NimBLE server created by the HID library.
-  NimBLEServer* server=NimBLEDevice::getServer();
-  if(server) {
-    NimBLEService* service=server->createService(SERVICE_UUID);
-    metaChar=service->createCharacteristic(META_UUID,
-      NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-    metaChar->setCallbacks(new MetaCallbacks());
-    artChar=service->createCharacteristic(ART_UUID,NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-    artChar->setCallbacks(new ArtworkCallbacks());
-    service->start();
-    // Do not force the 128-bit UUID into the legacy advertising packet; HID name
-    // remains discoverable and the Android companion scans for the name.
-    NimBLEAdvertising* adv=NimBLEDevice::getAdvertising();
-    if(adv) { adv->stop(); adv->start(); }
-    Serial.println("CrowPlayer metadata GATT service ready");
-  } else {
-    Serial.println("ERROR: HID BLE server was not created");
+static void hamReceive(uint32_t now){
+  int budget=256;while(budget--&&amp.available())if(parser.feed(amp.read(),now)){auto&p=parser.p;uint8_t*b=p.bytes;
+    if(ampPending&&b[3]==1&&b[4]==ampCommand&&b[5]==0xEE&&b[2]>=4&&b[6]==0x0A){ampAck=true;sendHam(ampCommand,0x66);}
+    if(cp::report(model.ham,p,now)){dirty=true;if(ampPending&&b[4]==ampCommand){int actual=ampCommand==1?model.ham.source:ampCommand==2?model.ham.volume:ampCommand==3?model.ham.sub:model.ham.mute;
+      if(actual==ampTarget){ampPending=false;model.requestPending=false;effect=ampCommand==2?4:2;effectAt=now;}else if(ampAck){ampPending=false;model.requestPending=false;notify("HAM изменил значение",true);}}}
   }
+  if(ampPending&&now-ampPendingAt>1000){ampPending=false;model.requestPending=false;notify("HAM: нет подтверждения",true);}
+  if(!ampPending&&now-lastPoll>200){static const uint8_t commands[]={0,4,2,3,1};sendHam(commands[pollIndex++%5],0x66);lastPoll=now;}
 }
-
-void loop() {
-  // Encoder: volume by default; optional media seek via companion setting.
-  int a=digitalRead(PIN_ENC_A);
-  if(a!=lastA && a==LOW) {
-    if(digitalRead(PIN_ENC_B)!=a) {
-      if(encoderSeek) sendMedia(MEDIA_FAST_FORWARD);
-      else { volumeEstimate=min(100,volumeEstimate+2); volumeOverlayUntil=millis()+1200; sendMedia(MEDIA_VOLUME_UP); }
-    } else {
-      if(encoderSeek) sendMedia(MEDIA_REWIND);
-      else { volumeEstimate=max(0,volumeEstimate-2); volumeOverlayUntil=millis()+1200; sendMedia(MEDIA_VOLUME_DOWN); }
-    }
-    screenDirty=true;
-  }
-  lastA=a;
-
-  // Button gestures: click=play/pause, double-click=next, hold=mute (HID volume toggle fallback).
-  bool sw=digitalRead(PIN_ENC_SW);
-  if(lastButton==HIGH && sw==LOW) {
-    buttonDownAt=millis(); longHandled=false;
-  }
-  if(sw==LOW && !longHandled && millis()-buttonDownAt>=700) {
-    sendMedia(0x00E2); longHandled=true; waitingSecondClick=false;
-  }
-  if(lastButton==LOW && sw==HIGH && !longHandled) {
-    uint32_t now=millis();
-    if(waitingSecondClick && now-lastClickAt<350) {
-      sendMedia(MEDIA_NEXT_TRACK); waitingSecondClick=false;
-    } else {
-      waitingSecondClick=true; lastClickAt=now;
-    }
-  }
-  if(waitingSecondClick && millis()-lastClickAt>=350) {
-    sendMedia(MEDIA_PLAY_PAUSE); waitingSecondClick=false;
-  }
-  lastButton=sw;
-
-  bool paired=keyboard.isPaired();
-  if(paired!=lastPaired) { lastPaired=paired; screenDirty=true; }
-  if(screenDirty || (paired && millis()-lastProgressDraw>=1000)) {
-    if(paired) drawPlayer(); else drawPairing();
-    screenDirty=false; lastProgressDraw=millis();
-  }
-  uint8_t targetBrightness=(uint8_t)(screenBrightness*255/100);
-  bool scheduledNight=false;
-  if(autoNight && syncedEpochMs>0) {
-    uint32_t epoch=(syncedEpochMs+(millis()-epochReceivedAt))/1000;
-    time_t raw=(time_t)epoch; struct tm *tmNow=gmtime(&raw);
-    if(tmNow) scheduledNight=(tmNow->tm_hour>=22 || tmNow->tm_hour<7);
-  }
-  if(nightMode || scheduledNight) targetBrightness=min(targetBrightness,(uint8_t)18);
-  ledcWrite(PIN_LCD_BL,targetBrightness);
-  updateAccentAnimation();
-  if(WiFi.status()==WL_CONNECTED) ArduinoOTA.handle();
-  delay(3);
+static void lighting(uint32_t now){
+  if(now-lastLed<20)return;float elapsed=now-lastLed;lastLed=now;bool day=model.clock.epoch&&cp::daytime(model.settings,model.clock.minute());float target=model.clock.epoch?(day?model.settings.dayLight:model.settings.nightLight):18;
+  brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);lcd.setBrightness(uint8_t(brightness*2.55f));float base=(model.clock.epoch?(day?model.settings.dayLed:model.settings.nightLed):6)/100.0f;if(model.ham.mute==1)base*=0.25f;
+  uint32_t color=cp::themes[model.settings.theme].rgb,t=now-effectAt;if(t>900)effect=0;
+  for(int i=0;i<5;i++){float f=base;if(effect==1&&int(t/80)%5==i)f=std::min(1.0f,base*2);else if(effect==2)f=base*(1+0.7f*sin(t*3.14159f/900));else if(effect==3)f=base*((t<150||(t>300&&t<450))?2:0.25f);else if(effect==4&&model.ham.online(now))f=base*(i*60/5<model.ham.volume?1.8f:0.12f);
+    f=cp::clamp(f,0.0f,1.0f);leds.setPixelColor(i,leds.Color(((color>>16)&255)*f,((color>>8)&255)*f,(color&255)*f));}leds.show();
+}
+void setup(){
+  pinMode(1,OUTPUT);digitalWrite(1,HIGH);pinMode(2,OUTPUT);digitalWrite(2,HIGH);pinMode(40,OUTPUT);digitalWrite(40,LOW);
+  pinMode(45,INPUT_PULLUP);pinMode(42,INPUT_PULLUP);pinMode(41,INPUT_PULLUP);encoderPrevious=(digitalRead(45)<<1)|digitalRead(42);attachInterrupt(45,onEncoder,CHANGE);attachInterrupt(42,onEncoder,CHANGE);
+  prefs.begin("crowpanel",false);if(prefs.getUChar("version",0)==1&&prefs.getBytesLength("settings")==sizeof(cp::Settings)){cp::Settings s;prefs.getBytes("settings",&s,sizeof s);if(s.valid())model.settings=s;}
+  lcd.init();lcd.setBrightness(46);leds.begin();leds.clear();leds.show();pinMode(13,OUTPUT);digitalWrite(13,LOW);delay(10);digitalWrite(13,HIGH);delay(50);Wire1.begin(6,7,400000);Wire1.setTimeOut(10);Wire1.beginTransmission(0x15);Wire1.write(0xFE);Wire1.write(0xFF);Wire1.endTransmission();
+  amp.begin(115200,SERIAL_8N1,44,43,true);tablet.begin(115200);USB.productName("CrowPanel Skoda Edition");USB.begin();
+  lv_init();auto*d=lv_display_create(240,240);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,drawBuffer,nullptr,sizeof drawBuffer,LV_DISPLAY_RENDER_MODE_PARTIAL);
+  lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<uint16_t*>(p));lv_display_flush_ready(display);});
+  if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
+}
+void loop(){
+  uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);touch(now);
+  int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
+  auto event=button.update(digitalRead(41)==LOW,now);if(event!=cp::ButtonEvent::None){bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;}else model.edit=!model.edit;saveLater();}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(model.ham.mute>=0)setHam(4,!model.ham.mute);}}
+  if(model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
+  if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",1);settingsDirty=false;}lighting(now);
+  if((dirty&&now-lastRender>60)||now-lastRender>=1000){cp::render(model,now);lastRender=now;dirty=false;}lv_timer_handler();
+  if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
