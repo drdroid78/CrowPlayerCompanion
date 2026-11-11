@@ -5,7 +5,7 @@ const Theme themes[8]={{"Tornado Red",0xC81A26},{"Lapiz Blue",0x1F5FA8},{"Reflex
 static lv_obj_t*root;static uint32_t accent;
 static lv_color_t col(uint32_t x){return lv_color_hex(x);}
 static lv_obj_t* label(const char*s,int x,int y,int w,const lv_font_t*f=&cp_font_12,uint32_t c=0xF5F5F5){
-  auto*l=lv_label_create(root);lv_obj_set_width(l,w);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
+  auto*l=lv_label_create(root);lv_obj_set_size(l,w,f->line_height);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
 }
 static void disc(int x,int y,int r,uint32_t c){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-r,y-r);lv_obj_set_size(o,2*r,2*r);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_color(o,col(c),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);}
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
