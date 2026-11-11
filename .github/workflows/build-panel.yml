@@ -39,7 +39,7 @@ jobs:
           key: crowpanel-arduino-338-lvgl910-lgfx1226-v1
       - name: Install pinned Arduino dependencies
         run: |
-          arduino-cli config init
+          arduino-cli config init --overwrite
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
           arduino-cli core install esp32:esp32@3.3.8
