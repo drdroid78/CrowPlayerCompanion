@@ -30,6 +30,13 @@ jobs:
           python -m pip install Pillow==11.3.0
           python scripts/panel-preview.py build/preview
       - uses: arduino/setup-arduino-cli@v2
+      - uses: actions/cache/restore@v4
+        id: arduino-cache
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: crowpanel-arduino-338-lvgl910-lgfx1226-v1
       - name: Install pinned Arduino dependencies
         run: |
           arduino-cli config init
@@ -37,9 +44,16 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp32:esp32@3.3.8
           arduino-cli lib install 'LovyanGFX@1.2.26' 'Adafruit NeoPixel@1.15.1' 'ArduinoJson@6.21.5' 'lvgl@9.1.0'
+      - uses: actions/cache/save@v4
+        if: steps.arduino-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: crowpanel-arduino-338-lvgl910-lgfx1226-v1
       - name: Compile ESP32-S3R8 native USB
         run: |
-          arduino-cli compile --fqbn 'esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=16M,PartitionScheme=default_16MB,PSRAM=opi' --build-property 'compiler.cpp.extra_flags=-DLV_CONF_SKIP' --build-property 'compiler.c.extra_flags=-DLV_CONF_SKIP' --output-dir build/panel firmware/CrowPlayer
+          arduino-cli compile --fqbn 'esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi' --build-property 'compiler.cpp.extra_flags=-DLV_CONF_SKIP' --build-property 'compiler.c.extra_flags=-DLV_CONF_SKIP' --output-dir build/panel firmware/CrowPlayer
       - uses: actions/upload-artifact@v4
         if: always()
         with:
