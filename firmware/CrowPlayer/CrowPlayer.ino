@@ -16,7 +16,7 @@ class CrowDisplay:public lgfx::LGFX_Device {
   lgfx::Panel_GC9A01 panel;lgfx::Bus_SPI bus;lgfx::Light_PWM light;
  public:CrowDisplay(){
     auto b=bus.config();b.spi_host=SPI2_HOST;b.spi_mode=0;b.freq_write=40000000;b.spi_3wire=true;b.use_lock=true;b.dma_channel=SPI_DMA_CH_AUTO;b.pin_sclk=10;b.pin_mosi=11;b.pin_miso=-1;b.pin_dc=3;bus.config(b);panel.setBus(&bus);
-    auto p=panel.config();p.pin_cs=9;p.pin_rst=14;p.pin_busy=-1;p.memory_width=240;p.memory_height=240;p.panel_width=240;p.panel_height=240;p.invert=true;p.rgb_order=false;panel.config(p);
+    auto p=panel.config();p.pin_cs=9;p.pin_rst=14;p.pin_busy=-1;p.memory_width=240;p.memory_height=240;p.panel_width=240;p.panel_height=240;p.invert=true;p.rgb_order=false;p.readable=false;p.bus_shared=false;p.dummy_read_pixel=8;p.dummy_read_bits=1;p.dlen_16bit=false;panel.config(p);
     auto l=light.config();l.pin_bl=46;l.invert=false;l.freq=12000;l.pwm_channel=7;light.config(l);panel.setLight(&light);setPanel(&panel);
   }
 };
@@ -31,6 +31,13 @@ static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendi
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0;static float brightness=18;
 static int queuedVolume=0;
 static uint16_t drawBuffer[240*24];
+static const char* volatile bootStage="starting";
+static volatile uint32_t flushCount=0,loopCount=0;
+static volatile bool displayOk=false;
+static void bootMonitor(void*){
+  // A separate task can report a stalled setup without using the amplifier UART.
+  for(;;){if(millis()<120000 && tablet){char b[240];int n=snprintf(b,sizeof b,"{\"v\":1,\"type\":\"diag\",\"stage\":\"%s\",\"ms\":%lu,\"heap\":%u,\"lcd\":%s,\"flushes\":%lu,\"loops\":%lu}\n",bootStage,(unsigned long)millis(),ESP.getFreeHeap(),displayOk?"true":"false",(unsigned long)flushCount,(unsigned long)loopCount);tablet.write((const uint8_t*)b,n);}vTaskDelay(pdMS_TO_TICKS(2000));}
+}
 void IRAM_ATTR onEncoder(){
   uint8_t next=(digitalRead(45)<<1)|digitalRead(42);portENTER_CRITICAL_ISR(&encoderMux);
   if((encoderPrevious^next)==3)encoderPartial=0;else encoderPartial+=encoderTable[(encoderPrevious<<2)|next];encoderPrevious=next;
@@ -108,23 +115,29 @@ static void lighting(uint32_t now){
 }
 void setup(){
   pinMode(1,OUTPUT);digitalWrite(1,HIGH);pinMode(2,OUTPUT);digitalWrite(2,HIGH);pinMode(40,OUTPUT);digitalWrite(40,LOW);
+  tablet.begin(115200);USB.productName("CrowPanel Skoda Edition");USB.begin();
+  xTaskCreate(bootMonitor,"boot-monitor",3072,nullptr,1,nullptr);
+  bootStage="encoder";
   pinMode(45,INPUT_PULLUP);pinMode(42,INPUT_PULLUP);pinMode(41,INPUT_PULLUP);encoderPrevious=(digitalRead(45)<<1)|digitalRead(42);attachInterrupt(45,onEncoder,CHANGE);attachInterrupt(42,onEncoder,CHANGE);
-  prefs.begin("crowpanel",false);if(prefs.getUChar("version",0)==1&&prefs.getBytesLength("settings")==sizeof(cp::Settings)){cp::Settings s;prefs.getBytes("settings",&s,sizeof s);if(s.valid())model.settings=s;}
-  lcd.init();lcd.setBrightness(46);leds.begin();leds.clear();leds.show();
+  bootStage="preferences";prefs.begin("crowpanel",false);if(prefs.getUChar("version",0)==1&&prefs.getBytesLength("settings")==sizeof(cp::Settings)){cp::Settings s;prefs.getBytes("settings",&s,sizeof s);if(s.valid())model.settings=s;}
+  bootStage="lcd-init";displayOk=lcd.init();lcd.setBrightness(90);
+  bootStage="lcd-test";lcd.fillScreen(0x081020U);lcd.setTextColor(0xFFFFFFU);lcd.setTextSize(2);lcd.setCursor(65,100);lcd.print("CrowPanel");
+  bootStage="led-init";leds.begin();leds.fill(leds.Color(0,0,12));leds.show();
+  bootStage="touch-init";
   pinMode(5,OUTPUT);digitalWrite(5,HIGH);delay(1);digitalWrite(5,LOW);delay(1);
   pinMode(13,OUTPUT);digitalWrite(13,LOW);delay(10);digitalWrite(13,HIGH);delay(300);pinMode(5,INPUT_PULLUP);
   Wire1.begin(6,7,400000);Wire1.setTimeOut(10);Wire1.beginTransmission(0x15);Wire1.write(0xFE);Wire1.write(0xFF);Wire1.endTransmission();
-  amp.begin(115200,SERIAL_8N1,44,43,true);tablet.begin(115200);USB.productName("CrowPanel Skoda Edition");USB.begin();
-  lv_init();auto*d=lv_display_create(240,240);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,drawBuffer,nullptr,sizeof drawBuffer,LV_DISPLAY_RENDER_MODE_PARTIAL);
-  lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<lgfx::rgb565_t*>(p));lv_display_flush_ready(display);});
+  bootStage="uart-init";amp.begin(115200,SERIAL_8N1,44,43,true);
+  bootStage="lv-init";lv_init();bootStage="lv-display";auto*d=lv_display_create(240,240);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,drawBuffer,nullptr,sizeof drawBuffer,LV_DISPLAY_RENDER_MODE_PARTIAL);
+  lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<lgfx::rgb565_t*>(p));flushCount++;lv_display_flush_ready(display);});
   if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
 }
 void loop(){
-  uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);touch(now);
+  loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);touch(now);
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
   auto event=button.update(digitalRead(41)==LOW,now);if(event!=cp::ButtonEvent::None){bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;}else model.edit=!model.edit;saveLater();}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(model.ham.mute>=0)setHam(4,!model.ham.mute);}}
   if(model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
   if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",1);settingsDirty=false;}lighting(now);
-  if((dirty&&now-lastRender>60)||now-lastRender>=1000){cp::render(model,now);lastRender=now;dirty=false;}lv_timer_handler();
+  if((dirty&&now-lastRender>60)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
