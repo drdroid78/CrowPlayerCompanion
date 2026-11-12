@@ -15,7 +15,7 @@
 class CrowDisplay:public lgfx::LGFX_Device {
   lgfx::Panel_GC9A01 panel;lgfx::Bus_SPI bus;lgfx::Light_PWM light;
  public:CrowDisplay(){
-    auto b=bus.config();b.spi_host=SPI2_HOST;b.spi_mode=0;b.freq_write=40000000;b.spi_3wire=true;b.use_lock=true;b.dma_channel=SPI_DMA_CH_AUTO;b.pin_sclk=10;b.pin_mosi=11;b.pin_miso=-1;b.pin_dc=3;bus.config(b);panel.setBus(&bus);
+    auto b=bus.config();b.spi_host=SPI2_HOST;b.spi_mode=0;b.freq_write=80000000;b.spi_3wire=true;b.use_lock=true;b.dma_channel=SPI_DMA_CH_AUTO;b.pin_sclk=10;b.pin_mosi=11;b.pin_miso=-1;b.pin_dc=3;bus.config(b);panel.setBus(&bus);
     auto p=panel.config();p.pin_cs=9;p.pin_rst=14;p.pin_busy=-1;p.memory_width=240;p.memory_height=240;p.panel_width=240;p.panel_height=240;p.invert=true;p.rgb_order=false;p.readable=false;p.bus_shared=false;p.dummy_read_pixel=8;p.dummy_read_bits=1;p.dlen_16bit=false;panel.config(p);
     auto l=light.config();l.pin_bl=46;l.invert=false;l.freq=12000;l.pwm_channel=7;light.config(l);panel.setLight(&light);setPanel(&panel);
   }
@@ -30,13 +30,14 @@ static bool dirty=true,settingsDirty=false,otaReady=false;static uint32_t settin
 static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendingId=0,usbPendingAt=0;
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0;static float brightness=18;
 static int queuedVolume=0;
-alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*24];
+alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
 static const char* volatile bootStage="starting";
 static volatile uint32_t flushCount=0,loopCount=0;
 static volatile bool displayOk=false;
+static volatile uint32_t hamBytes=0,hamReports=0;
 static void bootMonitor(void*){
   // A separate task can report a stalled setup without using the amplifier UART.
-  for(;;){if(millis()<120000 && tablet){char b[240];int n=snprintf(b,sizeof b,"{\"v\":1,\"type\":\"diag\",\"stage\":\"%s\",\"ms\":%lu,\"heap\":%u,\"lcd\":%s,\"flushes\":%lu,\"loops\":%lu}\n",bootStage,(unsigned long)millis(),ESP.getFreeHeap(),displayOk?"true":"false",(unsigned long)flushCount,(unsigned long)loopCount);tablet.write((const uint8_t*)b,n);}vTaskDelay(pdMS_TO_TICKS(2000));}
+  for(;;){if(millis()<120000 && tablet){char b[320];int n=snprintf(b,sizeof b,"{\"v\":1,\"type\":\"diag\",\"stage\":\"%s\",\"ms\":%lu,\"heap\":%u,\"lcd\":%s,\"flushes\":%lu,\"loops\":%lu,\"hamRxBytes\":%lu,\"hamReports\":%lu,\"hamOnline\":%s,\"hamVolume\":%d,\"encoderSteps\":%ld}\n",bootStage,(unsigned long)millis(),ESP.getFreeHeap(),displayOk?"true":"false",(unsigned long)flushCount,(unsigned long)loopCount,(unsigned long)hamBytes,(unsigned long)hamReports,model.ham.online(millis())?"true":"false",model.ham.volume,(long)encoderSteps);tablet.write((const uint8_t*)b,n);}vTaskDelay(pdMS_TO_TICKS(2000));}
 }
 void IRAM_ATTR onEncoder(){
   uint8_t next=(digitalRead(45)<<1)|digitalRead(42);portENTER_CRITICAL_ISR(&encoderMux);
@@ -97,7 +98,7 @@ static void usbReceive(uint32_t now){
   if(usbPendingId&&now-usbPendingAt>3000){usbPendingId=0;model.likePending=false;notify("Нет подтверждения",true);}
 }
 static void hamReceive(uint32_t now){
-  int budget=256;while(budget--&&amp.available())if(parser.feed(amp.read(),now)){auto&p=parser.p;uint8_t*b=p.bytes;
+  int budget=256;while(budget--&&amp.available()){uint8_t ch=amp.read();hamBytes++;if(!parser.feed(ch,now))continue;hamReports++;auto&p=parser.p;uint8_t*b=p.bytes;
     if(ampPending&&b[3]==1&&b[4]==ampCommand&&b[5]==0xEE&&b[2]>=4&&b[6]==0x0A){ampAck=true;sendHam(ampCommand,0x66);}
     if(cp::report(model.ham,p,now)){dirty=true;if(ampPending&&b[4]==ampCommand){int actual=ampCommand==1?model.ham.source:ampCommand==2?model.ham.volume:ampCommand==3?model.ham.sub:model.ham.mute;
       if(actual==ampTarget){ampPending=false;model.requestPending=false;effect=ampCommand==2?4:2;effectAt=now;}else if(ampAck){ampPending=false;model.requestPending=false;notify("HAM изменил значение",true);}}}
@@ -108,7 +109,12 @@ static void hamReceive(uint32_t now){
 }
 static void lighting(uint32_t now){
   if(now-lastLed<20)return;float elapsed=now-lastLed;lastLed=now;bool day=model.clock.epoch&&cp::daytime(model.settings,model.clock.minute());float target=model.clock.epoch?(day?model.settings.dayLight:model.settings.nightLight):18;
-  brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);lcd.setBrightness(uint8_t(brightness*2.55f));float base=(model.clock.epoch?(day?model.settings.dayLed:model.settings.nightLed):6)/100.0f;if(model.ham.mute==1)base*=0.25f;
+  bool previewDay=model.clock.epoch?day:false;
+  if(model.screen==4&&model.edit&&(model.setting==3||model.setting==5))previewDay=true;
+  if(model.screen==4&&model.edit&&(model.setting==4||model.setting==6))previewDay=false;
+  if(model.screen==4&&model.edit&&model.setting==3)target=model.settings.dayLight;
+  if(model.screen==4&&model.edit&&model.setting==4)target=model.settings.nightLight;
+  brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);lcd.setBrightness(uint8_t(brightness*2.55f));float base=(model.clock.epoch?(previewDay?model.settings.dayLed:model.settings.nightLed):6)/100.0f;if(model.screen==4&&model.edit&&model.setting==5)base=model.settings.dayLed/100.0f;if(model.screen==4&&model.edit&&model.setting==6)base=model.settings.nightLed/100.0f;if(model.ham.mute==1)base*=0.25f;
   uint32_t color=cp::themes[model.settings.theme].rgb,t=now-effectAt;if(t>900)effect=0;
   for(int i=0;i<5;i++){float f=base;if(effect==1&&int(t/80)%5==i)f=std::min(1.0f,base*2);else if(effect==2)f=base*(1+0.7f*sin(t*3.14159f/900));else if(effect==3)f=base*((t<150||(t>300&&t<450))?2:0.25f);else if(effect==4&&model.ham.online(now))f=base*(i*60/5<model.ham.volume?1.8f:0.12f);
     f=cp::clamp(f,0.0f,1.0f);leds.setPixelColor(i,leds.Color(((color>>16)&255)*f,((color>>8)&255)*f,(color&255)*f));}leds.show();
