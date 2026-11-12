@@ -93,6 +93,7 @@ struct LineBuffer {
 struct Model {
   Settings settings; Clock clock; HamState ham;
   int screen=1,setting=0;bool edit=false,subSelected=false,usb=false,playing=false,liked=false,likeKnown=false,likeAvailable=false,likePending=false,requestPending=false;
+  bool artworkPresent=false;uint8_t artwork[96*96*2]={};
   char title[192]="Ожидание планшета",artist[128]="Подключите USB",notice[96]="";
   uint32_t position=0,duration=0,positionAt=0,lastUsb=0,activeAt=0,noticeUntil=0;
 };

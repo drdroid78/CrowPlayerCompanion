@@ -4,6 +4,8 @@ namespace cp {
 const Theme themes[8]={{"Tornado Red",0xC81A26},{"Lapiz Blue",0x1F5FA8},{"Reflex Silver",0xC8C8C6},{"Indium Grey",0x8A8D90},{"Urano Grey",0x5B5D60},{"Atlantic Blue",0x0F3D68},{"Pure White",0xF5F5F5},{"Škoda Green",0x4BA82E}};
 static lv_obj_t*root;static uint32_t accent;
 static lv_color_t col(uint32_t x){return lv_color_hex(x);}
+static lv_image_dsc_t coverImage;
+static void cover(const Model&m){if(!m.artworkPresent)return;coverImage={};coverImage.header.magic=LV_IMAGE_HEADER_MAGIC;coverImage.header.cf=LV_COLOR_FORMAT_RGB565;coverImage.header.w=96;coverImage.header.h=96;coverImage.header.stride=96*2;coverImage.data_size=96*96*2;coverImage.data=m.artwork;auto*img=lv_image_create(root);lv_image_set_src(img,&coverImage);lv_obj_set_pos(img,72,54);}
 static lv_obj_t* label(const char*s,int x,int y,int w,const lv_font_t*f=&cp_font_14,uint32_t c=0xF5F5F5){
   auto*l=lv_label_create(root);lv_obj_set_size(l,w,f->line_height);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
 }
@@ -26,9 +28,9 @@ void render(const Model&m,uint32_t now){
   }else if(m.screen==1){
     ring(120,103,70,135,405,0x292C33,3);uint32_t pos=m.position;if(m.playing&&m.usb)pos+=now-m.positionAt;pos=std::min(pos,m.duration);
     if(m.duration)ring(120,103,70,135,135+std::max(1,int(uint64_t(pos)*270/m.duration)),accent,4);
-    disc(120,102,54,0x101218);label("♫",85,71,70,&cp_font_44,0x8C929B);heart(m.liked&&m.likeKnown);
+    disc(120,102,54,0x101218);if(m.artworkPresent)cover(m);else label("♫",85,71,70,&cp_font_44,0x8C929B);heart(m.liked&&m.likeKnown);
     if(m.likePending)label("…",177,54,30,&cp_font_14,accent);
-    char p[12],d[12];timeText(p,pos);timeText(d,m.duration);snprintf(b,sizeof b,"%s / %s",p,d);label(b,65,149,110,&cp_font_14,0xA5A9AF);
+    char p[12],d[12];timeText(p,pos);timeText(d,m.duration);snprintf(b,sizeof b,"%s / %s",p,d);label(b,65,152,110,&cp_font_14,0xA5A9AF);
     label(m.title,28,172,184,&cp_font_16);label(m.artist,35,193,170,&cp_font_14,0xA5A9AF);
     label(LV_SYMBOL_PREV,45,117,32,&lv_font_montserrat_14);label(m.playing?LV_SYMBOL_PAUSE:LV_SYMBOL_PLAY,104,117,32,&lv_font_montserrat_14);label(LV_SYMBOL_NEXT,163,117,32,&lv_font_montserrat_14);
   }else if(m.screen==2){

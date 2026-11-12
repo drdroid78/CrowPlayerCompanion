@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
@@ -13,6 +14,7 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.SystemClock
+import android.util.Base64
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.TimeZone
@@ -41,6 +43,7 @@ class UsbCdcLink(
     private var connectedDeviceId = -1
     private var registered = false
     private var lastStateAt = 0L
+    private var lastArtworkRevision = Long.MIN_VALUE
     private var lastStatus = ""
 
     private val receiver = object : BroadcastReceiver() {
@@ -229,7 +232,54 @@ class UsbCdcLink(
             .put("epochMs", System.currentTimeMillis())
             .put("utcOffsetMinutes", TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000)
         write(payload)
+        syncArtwork()
     }
+
+    private fun syncArtwork() {
+        val revision = PlayerSnapshot.artworkRevision
+        if (revision == lastArtworkRevision) return
+        lastArtworkRevision = revision
+        val bitmap = PlayerSnapshot.artwork
+        try {
+            writer.execute {
+                val conn = connection ?: return@execute
+                val endpoint = output ?: return@execute
+                if (bitmap == null) {
+                    writeBytes(conn, endpoint, (JSONObject().put("v", 1).put("type", "artwork_clear").toString() + "\n").toByteArray())
+                    return@execute
+                }
+                val width = 96
+                val height = 96
+                val scaled = if (bitmap.width == width && bitmap.height == height) bitmap
+                    else Bitmap.createScaledBitmap(bitmap, width, height, true)
+                val pixels = IntArray(width * height)
+                scaled.getPixels(pixels, 0, width, 0, 0, width, height)
+                val raw = ByteArray(pixels.size * 2)
+                for (i in pixels.indices) {
+                    val color = pixels[i]
+                    val rgb565 = (((color ushr 16) and 0xF8) shl 8) or
+                        (((color ushr 8) and 0xFC) shl 3) or ((color and 0xFF) ushr 3)
+                    raw[i * 2] = rgb565.toByte()
+                    raw[i * 2 + 1] = (rgb565 ushr 8).toByte()
+                }
+                if (scaled !== bitmap) scaled.recycle()
+                val chunks = (raw.size + 899) / 900
+                if (!writeBytes(conn, endpoint, line(JSONObject().put("v", 1).put("type", "artwork_start")
+                        .put("width", width).put("height", height).put("bytes", raw.size).put("chunks", chunks)))) return@execute
+                var offset = 0
+                while (offset < raw.size && connection === conn) {
+                    val length = minOf(900, raw.size - offset)
+                    val data = Base64.encodeToString(raw.copyOfRange(offset, offset + length), Base64.NO_WRAP)
+                    val packet = JSONObject().put("v", 1).put("type", "artwork_chunk").put("offset", offset).put("data", data)
+                    if (!writeBytes(conn, endpoint, line(packet))) return@execute
+                    offset += length
+                }
+                writeBytes(conn, endpoint, line(JSONObject().put("v", 1).put("type", "artwork_end")))
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {}
+    }
+
+    private fun line(json: JSONObject) = (json.toString() + "\n").toByteArray(Charsets.UTF_8)
 
     fun sendResult(id: Long, ok: Boolean, liked: Boolean?) {
         val payload = JSONObject().put("v", 1).put("type", "result").put("id", id).put("ok", ok)
@@ -237,24 +287,35 @@ class UsbCdcLink(
         write(payload)
     }
 
+    fun sendResult(id: Long, ok: Boolean, liked: Boolean?, message: String?) {
+        val payload = JSONObject().put("v", 1).put("type", "result").put("id", id).put("ok", ok)
+            .put("liked", liked ?: JSONObject.NULL).put("message", message ?: JSONObject.NULL)
+        write(payload)
+    }
+
     private fun write(json: JSONObject) {
-        val bytes = (json.toString() + "\n").toByteArray(Charsets.UTF_8)
+        val bytes = line(json)
         try {
             writer.execute {
                 val conn = connection ?: return@execute
                 val endpoint = output ?: return@execute
-                var offset = 0
-                while (offset < bytes.size && connection === conn) {
-                    val sent = try { conn.bulkTransfer(endpoint, bytes, offset, bytes.size - offset, 1000) }
-                    catch (_: Exception) { -1 }
-                    if (sent <= 0) {
-                        report("Ошибка передачи данных CrowPanel по USB")
-                        return@execute
-                    }
-                    offset += sent
-                }
+                writeBytes(conn, endpoint, bytes)
             }
         } catch (_: java.util.concurrent.RejectedExecutionException) {}
+    }
+
+    private fun writeBytes(conn: UsbDeviceConnection, endpoint: UsbEndpoint, bytes: ByteArray): Boolean {
+        var offset = 0
+        while (offset < bytes.size && connection === conn) {
+            val sent = try { conn.bulkTransfer(endpoint, bytes, offset, bytes.size - offset, 1000) }
+            catch (_: Exception) { -1 }
+            if (sent <= 0) {
+                report("Ошибка передачи данных CrowPanel по USB")
+                return false
+            }
+            offset += sent
+        }
+        return offset == bytes.size
     }
 
     private fun report(message: String) {
@@ -287,4 +348,3 @@ class UsbCdcLink(
         writer.shutdownNow()
     }
 }
-

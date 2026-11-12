@@ -12,6 +12,7 @@ object PlayerSnapshot {
     @Volatile var packageName: String = ""
     @Volatile var playback: String = "Неизвестно"
     @Volatile var artwork: Bitmap? = null
+    @Volatile var artworkRevision: Long = 0L
     @Volatile var positionMs: Long = 0L
     @Volatile var durationMs: Long = 0L
     @Volatile var lastUpdated: Long = 0L
@@ -27,6 +28,7 @@ object PlayerSnapshot {
         packageName = ""
         playback = "Неизвестно"
         artwork = null
+        artworkRevision++
         positionMs = 0L
         durationMs = 0L
         lastUpdated = System.currentTimeMillis()

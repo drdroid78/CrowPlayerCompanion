@@ -382,14 +382,19 @@ class MainActivity : Activity() {
             command.optString("artist").trim().equals(PlayerSnapshot.artist.trim(), ignoreCase = true)
         val desiredValue = command.opt("liked")
         val desired = desiredValue as? Boolean
-        if (!sameTrack || actual == null || !PlayerSnapshot.likeAvailable || desired == null || desired == actual) {
-            usb.sendResult(id, false, actual)
+        if (!sameTrack || !PlayerSnapshot.likeAvailable || desired == null || (actual != null && desired == actual)) {
+            val message = when {
+                !sameTrack -> "Трек уже сменился"
+                !PlayerSnapshot.likeAvailable -> "Войди в аккаунт Яндекса в приложении-компаньоне"
+                else -> "Состояние избранного обновляется"
+            }
+            usb.sendResult(id, false, actual, message)
             return
         }
         MusicNotificationListener.toggleLike { result ->
             val confirmed = result == MusicNotificationListener.LikeResult.CONFIRMED &&
                 PlayerSnapshot.likeStateKnown && PlayerSnapshot.isLiked == desired
-            usb.sendResult(id, confirmed, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null)
+            usb.sendResult(id, confirmed, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null, result.message)
         }
     }
 }

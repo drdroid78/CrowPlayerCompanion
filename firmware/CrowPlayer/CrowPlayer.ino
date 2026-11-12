@@ -30,6 +30,7 @@ static bool dirty=true,settingsDirty=false,otaReady=false;static uint32_t settin
 static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendingId=0,usbPendingAt=0;
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0;static float brightness=18;
 static int queuedVolume=0;
+static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
 alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
 static const char* volatile bootStage="starting";
 static volatile uint32_t flushCount=0,loopCount=0;
@@ -60,10 +61,12 @@ static void volume(int delta){
 }
 static void media(const char*action){
   if(!model.usb){notify("Подключите USB",true);return;}if(usbPendingId)return;
-  if(!strcmp(action,"like")&&(!model.likeAvailable||!model.likeKnown)){notify("Лайк недоступен",true);return;}
+  if(!strcmp(action,"like")&&!model.likeAvailable){notify("Войдите в Яндекс в компаньоне",true);return;}
   StaticJsonDocument<768>d;usbPendingId=nextId++;usbPendingAt=millis();d["v"]=1;d["type"]="command";d["id"]=usbPendingId;d["action"]=action;d["title"]=model.title;d["artist"]=model.artist;
   if(!strcmp(action,"like")){d["liked"]=!model.liked;model.likePending=true;}serializeJson(d,tablet);tablet.println();dirty=true;
 }
+static int b64value(char c){if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;if(c=='+')return 62;if(c=='/')return 63;return -1;}
+static size_t decodeBase64(const char*src,uint8_t*out,size_t cap){uint32_t acc=0;int bits=0;size_t n=0;for(;*src;src++){int v=b64value(*src);if(v<0)break;acc=(acc<<6)|uint32_t(v);bits+=6;if(bits>=8){bits-=8;if(n>=cap)return 0;out[n++]=uint8_t(acc>>bits);}}return n;}
 static void editSetting(int delta){auto&s=model.settings;switch(model.setting){case 0:s.theme=(s.theme+delta%8+8)%8;break;case 1:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 2:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 3:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 4:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 5:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 6:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 7:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;}saveLater();}
 static void rotate(int delta){activity();if(model.screen==5){model.setting=0;editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
 static void tap(int x,int y){
@@ -93,7 +96,11 @@ static void usbReceive(uint32_t now){
       model.likeKnown=d["liked"].is<bool>();model.liked=d["liked"]|false;model.likeAvailable=d["likeAvailable"]|false;if(changed){model.likePending=false;usbPendingId=0;}
       model.clock.sync(d["epochMs"]|uint64_t(0),now,d["utcOffsetMinutes"]|180);model.lastUsb=now;model.usb=true;dirty=true;
     }else if(!strcmp(type,"heartbeat")){model.lastUsb=now;model.usb=true;}
-    else if(!strcmp(type,"result")&&usbPendingId&&d["id"].as<uint32_t>()==usbPendingId){if(d["ok"]==true){if(model.likePending&&d["liked"].is<bool>()){model.liked=d["liked"].as<bool>();model.likeKnown=true;}notify("Подтверждено");}else notify("Команда не выполнена",true);usbPendingId=0;model.likePending=false;}
+    else if(!strcmp(type,"artwork_start")){uint32_t w=d["width"]|0,h=d["height"]|0;size_t bytes=d["bytes"]|0;artworkReceiving=w==96&&h==96&&bytes==sizeof(model.artwork);artworkExpected=artworkReceiving?bytes:0;artworkReceived=0;model.artworkPresent=false;}
+    else if(!strcmp(type,"artwork_chunk")&&artworkReceiving){size_t offset=d["offset"]|size_t(-1);const char*encoded=d["data"]|"";if(offset!=artworkReceived||offset>=artworkExpected){artworkReceiving=false;continue;}size_t written=decodeBase64(encoded,model.artwork+offset,artworkExpected-offset);if(!written){artworkReceiving=false;continue;}artworkReceived+=written;}
+    else if(!strcmp(type,"artwork_end")){model.artworkPresent=artworkReceiving&&artworkReceived==artworkExpected;artworkReceiving=false;dirty=true;}
+    else if(!strcmp(type,"artwork_clear")){artworkReceiving=false;model.artworkPresent=false;dirty=true;}
+    else if(!strcmp(type,"result")&&usbPendingId&&d["id"].as<uint32_t>()==usbPendingId){if(d["ok"]==true){if(model.likePending&&d["liked"].is<bool>()){model.liked=d["liked"].as<bool>();model.likeKnown=true;}notify("Подтверждено");}else notify(d["message"]|"Команда не выполнена",true);usbPendingId=0;model.likePending=false;}
   }
   if(model.usb&&(!tablet||uint32_t(now-model.lastUsb)>5000)){model.usb=false;model.playing=false;usbPendingId=0;model.likePending=false;notify("USB отключён",true);}
   if(usbPendingId&&now-usbPendingAt>3000){usbPendingId=0;model.likePending=false;notify("Нет подтверждения",true);}

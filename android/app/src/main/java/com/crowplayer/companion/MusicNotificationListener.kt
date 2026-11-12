@@ -116,6 +116,9 @@ class MusicNotificationListener : NotificationListenerService() {
     private val notifications = mutableMapOf<String, StatusBarNotification>()
     @Volatile private var pendingLike: LikeRequest? = null
     private var yandexLikes: YandexLikes? = null
+    private val artworkExecutor = Executors.newSingleThreadExecutor()
+    private var artworkTrackKey = ""
+    private var artworkLoadingKey = ""
     private var apiRequestPending = false
     private val poll = object : Runnable {
         override fun run() { updateSnapshot(); handler.postDelayed(this, 1000L) }
@@ -183,6 +186,8 @@ class MusicNotificationListener : NotificationListenerService() {
         if (wasActive) { listener = null; activeController = null }
         yandexLikes?.close()
         yandexLikes = null
+        artworkTrackKey = ""
+        artworkLoadingKey = ""
         pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
         notifications.clear()
         if (wasActive) PlayerSnapshot.clear()
@@ -360,6 +365,8 @@ class MusicNotificationListener : NotificationListenerService() {
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST) ?: "Исполнитель неизвестен"
         val artwork = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        val artworkUri = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+            ?: metadata?.getString(MediaMetadata.METADATA_KEY_ART_URI)
         PlayerSnapshot.title = title.take(80)
         PlayerSnapshot.artist = artist.take(80)
         PlayerSnapshot.album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: ""
@@ -369,7 +376,30 @@ class MusicNotificationListener : NotificationListenerService() {
             PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED -> "paused"
             else -> "paused"
         }
-        PlayerSnapshot.artwork = artwork
+        val artworkKey = "${controller.packageName}|${track(controller).mediaId.orEmpty()}|$title|$artist"
+        if (artworkTrackKey != artworkKey) {
+            artworkTrackKey = artworkKey
+            artworkLoadingKey = ""
+            PlayerSnapshot.artwork = null
+            PlayerSnapshot.artworkRevision++
+        }
+        if (artwork != null && PlayerSnapshot.artwork == null) {
+            PlayerSnapshot.artwork = artwork
+            PlayerSnapshot.artworkRevision++
+        } else if (artwork == null && PlayerSnapshot.artwork == null && !artworkUri.isNullOrBlank() && artworkLoadingKey != artworkKey) {
+            artworkLoadingKey = artworkKey
+            val token = controller.sessionToken
+            artworkExecutor.execute {
+                val loaded = runCatching { ArtworkLoader.load(this, artworkUri) }.getOrNull()
+                handler.post {
+                    val current = activeController
+                    if (loaded != null && current?.sessionToken == token && artworkTrackKey == artworkKey && PlayerSnapshot.artwork == null) {
+                        PlayerSnapshot.artwork = loaded
+                        PlayerSnapshot.artworkRevision++
+                    }
+                }
+            }
+        }
         val support = likeSupport(controller)
         val direct = apiTarget(controller)?.let { directLikes().view(it) }
         val liked = if (direct != null) direct.liked else support.state
