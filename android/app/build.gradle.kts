@@ -11,8 +11,8 @@ android {
         applicationId = "com.crowplayer.companion"
         minSdk = 26
         targetSdk = 32
-        versionCode = 11
-        versionName = "0.6.3"
+        versionCode = 12
+        versionName = "0.6.4"
     }
 
     compileOptions {
@@ -37,3 +37,4 @@ dependencies {
 tasks.withType<Test>().configureEach {
     testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }
+
