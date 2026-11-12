@@ -55,20 +55,14 @@ class MusicNotificationListener : NotificationListenerService() {
 
         fun transport(action: String): Boolean {
             val controller = activeController ?: return false
-            val actions = controller.playbackState?.actions ?: 0L
-            val flag = when (action) {
-                "play_pause" -> if (controller.playbackState?.state == PlaybackState.STATE_PLAYING)
-                    PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
-                "previous" -> PlaybackState.ACTION_SKIP_TO_PREVIOUS
-                "next" -> PlaybackState.ACTION_SKIP_TO_NEXT
-                else -> return false
-            }
-            if (actions and flag == 0L) return false
+            if (action !in setOf("play_pause", "previous", "next")) return false
             commandExecutor.execute {
                 try {
                     when (action) {
-                        "play_pause" -> if (flag == PlaybackState.ACTION_PAUSE) controller.transportControls.pause()
-                            else controller.transportControls.play()
+                        // Some players (including background Yandex sessions) omit transport
+                        // action flags even though their controls accept these commands.
+                        "play_pause" -> if (controller.playbackState?.state == PlaybackState.STATE_PLAYING)
+                            controller.transportControls.pause() else controller.transportControls.play()
                         "previous" -> controller.transportControls.skipToPrevious()
                         "next" -> controller.transportControls.skipToNext()
                     }

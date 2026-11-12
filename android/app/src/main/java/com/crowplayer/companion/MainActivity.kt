@@ -281,6 +281,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshNotificationAccessStatus()
+        val keepAlive = Intent(this, PanelKeepAliveService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(keepAlive) else startService(keepAlive)
         usb.start()
         handler.removeCallbacks(refreshTask)
         handler.post(refreshTask)

@@ -79,15 +79,18 @@ static void tap(int x,int y){
   else if(model.screen==5){int row=(y-44)/31;int col=x<120?0:1;if(y>=44&&row<4&&x>=24&&x<216){model.settings.theme=row*2+col;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}}
 }
 static bool readTouch(uint8_t reg,uint8_t*out,size_t n){Wire1.beginTransmission(0x15);Wire1.write(reg);if(Wire1.endTransmission(false)!=0)return false;if(Wire1.requestFrom(uint8_t(0x15),uint8_t(n))!=n)return false;for(size_t i=0;i<n;i++)out[i]=Wire1.read();return true;}
+static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uint32_t downAt){
+  int dx=endX-startX,dy=endY-startY;bool asleep=model.screen==0;activity();if(asleep)return;
+  if(abs(dx)>35&&abs(dx)>abs(dy)*1.3){model.screen=1+((model.screen-1+(dx<0?1:4))%5);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
+  else if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){model.setting=0;editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
+  else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
+}
 static void touch(uint32_t now){
-  if(now-lastTouch<12)return;lastTouch=now;static bool held=false;static int startX,startY,endX,endY;static uint32_t downAt=0;uint8_t b[5];
-  if(!readTouch(2,b,5))return;bool pressed=(b[0]&15)>0;int x=((b[1]&15)<<8)|b[2],y=((b[3]&15)<<8)|b[4];if(pressed&&(x>=240||y>=240))return;
+  if(now-lastTouch<12)return;lastTouch=now;static bool held=false;static int startX,startY,endX,endY;static uint32_t downAt=0,lastGoodRead=0;uint8_t b[5];
+  if(!readTouch(2,b,5)){if(held&&uint32_t(now-lastGoodRead)>180){held=false;finishTouch(now,startX,startY,endX,endY,downAt);}return;}
+  bool pressed=(b[0]&15)>0;int x=((b[1]&15)<<8)|b[2],y=((b[3]&15)<<8)|b[4];if(pressed&&(x>=240||y>=240)){if(held&&uint32_t(now-lastGoodRead)>180){held=false;finishTouch(now,startX,startY,endX,endY,downAt);}return;}lastGoodRead=now;
   if(pressed&&!held){held=true;startX=endX=x;startY=endY=y;downAt=now;}else if(pressed){endX=x;endY=y;}
-  else if(held){held=false;int dx=endX-startX,dy=endY-startY;bool asleep=model.screen==0;activity();if(asleep)return;
-    if(abs(dx)>35&&abs(dx)>abs(dy)*1.3){model.screen=(model.screen+(dx<0?1:5))%6;model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
-    else if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){model.setting=0;editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
-    else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
-  }
+  else if(held){held=false;finishTouch(now,startX,startY,endX,endY,downAt);}
 }
 static void usbReceive(uint32_t now){
   int budget=512;while(budget--&&tablet.available()){if(!usbLine.feed(tablet.read()))continue;StaticJsonDocument<3072>d;if(deserializeJson(d,usbLine.data)||d["v"]!=1)continue;const char*type=d["type"]|"";
