@@ -45,7 +45,8 @@ void IRAM_ATTR onEncoder(){
   if((encoderPrevious^next)==3)encoderPartial=0;else encoderPartial+=encoderTable[(encoderPrevious<<2)|next];encoderPrevious=next;
   if(encoderPartial>=4){encoderSteps++;encoderPartial=0;}else if(encoderPartial<=-4){encoderSteps--;encoderPartial=0;}portEXIT_CRITICAL_ISR(&encoderMux);
 }
-static void notify(const char*s,bool error=false){strlcpy(model.notice,s,sizeof model.notice);model.noticeUntil=millis()+1500;effect=error?3:2;effectAt=millis();dirty=true;}
+// Keep feedback on the five LEDs; service text popups are too intrusive on the 240 px display.
+static void notify(const char*s,bool error=false){(void)s;effect=error?3:2;effectAt=millis();}
 static void saveLater(){settingsDirty=true;settingsAt=millis();dirty=true;}
 static void activity(){model.activeAt=millis();if(model.screen==0){model.screen=1;dirty=true;}}
 static void sendHam(uint8_t cmd,uint8_t op,const uint8_t*data=nullptr,size_t n=0){auto p=cp::packet(1,cmd,op,data,n);amp.write(p.bytes,p.size);}
@@ -102,7 +103,9 @@ static void usbReceive(uint32_t now){
     else if(!strcmp(type,"artwork_clear")){artworkReceiving=false;model.artworkPresent=false;dirty=true;}
     else if(!strcmp(type,"result")&&usbPendingId&&d["id"].as<uint32_t>()==usbPendingId){if(d["ok"]==true){if(model.likePending&&d["liked"].is<bool>()){model.liked=d["liked"].as<bool>();model.likeKnown=true;}notify("Подтверждено");}else notify(d["message"]|"Команда не выполнена",true);usbPendingId=0;model.likePending=false;}
   }
-  if(model.usb&&(!tablet||uint32_t(now-model.lastUsb)>5000)){model.usb=false;model.playing=false;usbPendingId=0;model.likePending=false;notify("USB отключён",true);}
+  // USB CDC can briefly miss host state writes while Android is busy; only age out
+  // the link after repeated missed updates, not on a transient DTR/host-status change.
+  if(model.usb&&uint32_t(now-model.lastUsb)>15000){model.usb=false;model.playing=false;usbPendingId=0;model.likePending=false;}
   if(usbPendingId&&now-usbPendingAt>3000){usbPendingId=0;model.likePending=false;notify("Нет подтверждения",true);}
 }
 static void hamReceive(uint32_t now){
@@ -150,7 +153,7 @@ void loop(){
   loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);touch(now);
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
   auto event=button.update(digitalRead(41)==LOW,now);if(event!=cp::ButtonEvent::None){bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;}else if(model.setting==0){model.screen=5;model.edit=false;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){if(event==cp::ButtonEvent::Hold)model.screen=1;else model.screen=4;model.edit=false;dirty=true;}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(model.ham.mute>=0)setHam(4,!model.ham.mute);}}
-  if(model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
+  if(!model.playing&&model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
   if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",1);settingsDirty=false;}lighting(now);
   if((dirty&&now-lastRender>60)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);

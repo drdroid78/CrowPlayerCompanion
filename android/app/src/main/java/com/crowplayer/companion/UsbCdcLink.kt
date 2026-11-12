@@ -13,6 +13,8 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Base64
 import org.json.JSONObject
@@ -35,6 +37,7 @@ class UsbCdcLink(
 
     private val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
     private val writer = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val stateLock = Any()
     @Volatile private var connection: UsbDeviceConnection? = null
     @Volatile private var output: UsbEndpoint? = null
@@ -42,6 +45,7 @@ class UsbCdcLink(
     private var reader: Thread? = null
     private var connectedDeviceId = -1
     private var registered = false
+    @Volatile private var started = false
     private var lastStateAt = 0L
     private var lastArtworkRevision = Long.MIN_VALUE
     private var lastStatus = ""
@@ -57,7 +61,10 @@ class UsbCdcLink(
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> discover()
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                     val device = intent.usbDeviceExtra()
-                    if (device == null || device.deviceId == connectedDeviceId) disconnect("CrowPanel отключена")
+                    if (device == null || device.deviceId == connectedDeviceId) {
+                        disconnect("CrowPanel отключена")
+                        scheduleReconnect()
+                    }
                 }
             }
         }
@@ -69,6 +76,7 @@ class UsbCdcLink(
     else getParcelableExtra(UsbManager.EXTRA_DEVICE)
 
     fun start() {
+        started = true
         if (!context.packageManager.hasSystemFeature("android.hardware.usb.host")) {
             report("Планшет не поддерживает USB host/OTG")
             return
@@ -210,7 +218,15 @@ class UsbCdcLink(
                 }
             }
         }
-        if (connection === conn) disconnect("Связь с CrowPanel по USB прервана")
+        if (connection === conn) {
+            disconnect("Связь с CrowPanel по USB прервана")
+            scheduleReconnect()
+        }
+    }
+
+    private fun scheduleReconnect() {
+        if (!started) return
+        mainHandler.postDelayed({ if (started && connection == null) discover() }, 1000L)
     }
 
     @Synchronized
@@ -340,6 +356,8 @@ class UsbCdcLink(
     }
 
     fun close() {
+        started = false
+        mainHandler.removeCallbacksAndMessages(null)
         disconnect("Связь с CrowPanel отключена")
         if (registered) {
             try { context.unregisterReceiver(receiver) } catch (_: Exception) {}

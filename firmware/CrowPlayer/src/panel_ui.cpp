@@ -54,6 +54,5 @@ void render(const Model&m,uint32_t now){
     label(themes[m.settings.theme].name,25,181,190,&cp_font_16,accent);snprintf(b,sizeof b,"#%06lX",(unsigned long)themes[m.settings.theme].rgb);label(b,25,198,190,&cp_font_14,0xA5A9AF);
   }
   nav(m.screen);
-  if(m.notice[0]&&int32_t(m.noticeUntil-now)>0){disc(120,184,48,0x1B1F26);label(m.notice,35,173,170,&cp_font_14);}
 }
 }
