@@ -54,7 +54,8 @@ struct HamState {
   bool online(uint32_t now)const{return seen&&uint32_t(now-lastRx)<3500;}
   bool advertised(uint8_t id)const{for(int i=0;i<count;i++)if(sources[i]==id)return true;return false;}
 };
-inline const char* sourceName(int id){static const char* names[]={"OPT","COAX","BT","AUX","LOW","HIGH","USB","UDP","SCP"};return id>=0&&id<9?names[id]:"--";}
+inline const char* sourceName(int id){static const char* names[]={"OPT","COAX","BT","AUX","AUX IN","HIGH","USB","UDP","SCP"};return id>=0&&id<9?names[id]:"--";}
+inline void sourcePosition(int i,int&x,int&y){static const int xs[5]={45,120,195,83,157},ys[5]={66,66,66,153,153};i=clamp(i,0,4);x=xs[i];y=ys[i];}
 struct Packet {uint8_t bytes[68]={};size_t size=0;};
 inline Packet packet(uint8_t group,uint8_t command,uint8_t type,const uint8_t*data=nullptr,size_t n=0){
   Packet p;if(n>61)return p;p.size=n+7;p.bytes[0]=0xAA;p.bytes[1]=0x77;p.bytes[2]=n+3;p.bytes[3]=group;p.bytes[4]=command;p.bytes[5]=type;
@@ -93,8 +94,10 @@ struct LineBuffer {
 struct Model {
   Settings settings; Clock clock; HamState ham;
   int screen=1,setting=0;bool edit=false,subSelected=false,usb=false,playing=false,liked=false,likeKnown=false,likeAvailable=false,likePending=false,requestPending=false;
+  bool volumeOverlay=false,volumeOverlaySub=false;uint32_t volumeOverlayUntil=0;
   bool artworkPresent=false;uint8_t artwork[96*96*2]={};
   char title[192]="Ожидание планшета",artist[128]="Подключите USB";
   uint32_t position=0,duration=0,positionAt=0,lastUsb=0,activeAt=0;
 };
 }
+
