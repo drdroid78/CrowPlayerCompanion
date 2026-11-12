@@ -65,13 +65,14 @@ static void media(const char*action){
   if(!strcmp(action,"like")){d["liked"]=!model.liked;model.likePending=true;}serializeJson(d,tablet);tablet.println();dirty=true;
 }
 static void editSetting(int delta){auto&s=model.settings;switch(model.setting){case 0:s.theme=(s.theme+delta%8+8)%8;break;case 1:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 2:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 3:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 4:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 5:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 6:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 7:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;}saveLater();}
-static void rotate(int delta){activity();if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
+static void rotate(int delta){activity();if(model.screen==5){model.setting=0;editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
 static void tap(int x,int y){
   if(model.screen==0){activity();return;}activity();
   if(model.screen==1){if(x>=170&&y<80)media("like");else if(y>=96&&y<148){if(x<90)media("previous");else if(x>150)media("next");else media("play_pause");}}
   else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
   else if(model.screen==3&&model.ham.online(millis())){for(int i=0;i<model.ham.count;i++){float a=(-90+i*360.0/model.ham.count)*3.14159265/180;int sx=120+cos(a)*76,sy=118+sin(a)*76;if((x-sx)*(x-sx)+(y-sy)*(y-sy)<25*25)setHam(1,model.ham.sources[i]);}}
-  else if(model.screen==4){if(y>=95&&y<145){model.edit=!model.edit;saveLater();}else{model.setting=(model.setting+(y<95?7:1))%8;model.edit=false;dirty=true;}}
+  else if(model.screen==4){if(model.setting==0){model.screen=5;model.edit=false;dirty=true;}else if(y>=95&&y<145){model.edit=!model.edit;saveLater();}else{model.setting=(model.setting+(y<95?7:1))%8;model.edit=false;dirty=true;}}
+  else if(model.screen==5){int row=(y-44)/31;int col=x<120?0:1;if(y>=44&&row<4&&x>=24&&x<216){model.settings.theme=row*2+col;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}}
 }
 static bool readTouch(uint8_t reg,uint8_t*out,size_t n){Wire1.beginTransmission(0x15);Wire1.write(reg);if(Wire1.endTransmission(false)!=0)return false;if(Wire1.requestFrom(uint8_t(0x15),uint8_t(n))!=n)return false;for(size_t i=0;i<n;i++)out[i]=Wire1.read();return true;}
 static void touch(uint32_t now){
@@ -79,8 +80,8 @@ static void touch(uint32_t now){
   if(!readTouch(2,b,5))return;bool pressed=(b[0]&15)>0;int x=((b[1]&15)<<8)|b[2],y=((b[3]&15)<<8)|b[4];if(pressed&&(x>=240||y>=240))return;
   if(pressed&&!held){held=true;startX=endX=x;startY=endY=y;downAt=now;}else if(pressed){endX=x;endY=y;}
   else if(held){held=false;int dx=endX-startX,dy=endY-startY;bool asleep=model.screen==0;activity();if(asleep)return;
-    if(abs(dx)>35&&abs(dx)>abs(dy)*1.3){model.screen=(model.screen+(dx<0?1:4))%5;model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
-    else if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else volume(cp::clamp(-dy/12,-10,10));}
+    if(abs(dx)>35&&abs(dx)>abs(dy)*1.3){model.screen=(model.screen+(dx<0?1:5))%6;model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
+    else if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){model.setting=0;editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
     else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
   }
 }
@@ -108,13 +109,13 @@ static void hamReceive(uint32_t now){
   if(!ampPending&&now-lastPoll>200){static const uint8_t commands[]={0,4,2,3,1};sendHam(commands[pollIndex++%5],0x66);lastPoll=now;}
 }
 static void lighting(uint32_t now){
-  if(now-lastLed<20)return;float elapsed=now-lastLed;lastLed=now;bool day=model.clock.epoch&&cp::daytime(model.settings,model.clock.minute());float target=model.clock.epoch?(day?model.settings.dayLight:model.settings.nightLight):18;
-  bool previewDay=model.clock.epoch?day:false;
+  if(now-lastLed<20)return;float elapsed=now-lastLed;lastLed=now;bool day=model.clock.epoch&&cp::daytime(model.settings,model.clock.minute());float target=model.clock.epoch?(day?model.settings.dayLight:model.settings.nightLight):model.settings.dayLight;
+  bool previewDay=model.clock.epoch?day:true;
   if(model.screen==4&&model.edit&&(model.setting==3||model.setting==5))previewDay=true;
   if(model.screen==4&&model.edit&&(model.setting==4||model.setting==6))previewDay=false;
   if(model.screen==4&&model.edit&&model.setting==3)target=model.settings.dayLight;
   if(model.screen==4&&model.edit&&model.setting==4)target=model.settings.nightLight;
-  brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);lcd.setBrightness(uint8_t(brightness*2.55f));float base=(model.clock.epoch?(previewDay?model.settings.dayLed:model.settings.nightLed):6)/100.0f;if(model.screen==4&&model.edit&&model.setting==5)base=model.settings.dayLed/100.0f;if(model.screen==4&&model.edit&&model.setting==6)base=model.settings.nightLed/100.0f;if(model.ham.mute==1)base*=0.25f;
+  brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);lcd.setBrightness(uint8_t(brightness*2.55f));float base=(model.clock.epoch?(previewDay?model.settings.dayLed:model.settings.nightLed):model.settings.dayLed)/100.0f;if(model.screen==4&&model.edit&&model.setting==5)base=model.settings.dayLed/100.0f;if(model.screen==4&&model.edit&&model.setting==6)base=model.settings.nightLed/100.0f;if(model.ham.mute==1)base*=0.25f;
   uint32_t color=cp::themes[model.settings.theme].rgb,t=now-effectAt;if(t>900)effect=0;
   for(int i=0;i<5;i++){float f=base;if(effect==1&&int(t/80)%5==i)f=std::min(1.0f,base*2);else if(effect==2)f=base*(1+0.7f*sin(t*3.14159f/900));else if(effect==3)f=base*((t<150||(t>300&&t<450))?2:0.25f);else if(effect==4&&model.ham.online(now))f=base*(i*60/5<model.ham.volume?1.8f:0.12f);
     f=cp::clamp(f,0.0f,1.0f);leds.setPixelColor(i,leds.Color(((color>>16)&255)*f,((color>>8)&255)*f,(color&255)*f));}leds.show();
@@ -141,7 +142,7 @@ void setup(){
 void loop(){
   loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);touch(now);
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
-  auto event=button.update(digitalRead(41)==LOW,now);if(event!=cp::ButtonEvent::None){bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;}else model.edit=!model.edit;saveLater();}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(model.ham.mute>=0)setHam(4,!model.ham.mute);}}
+  auto event=button.update(digitalRead(41)==LOW,now);if(event!=cp::ButtonEvent::None){bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;}else if(model.setting==0){model.screen=5;model.edit=false;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){if(event==cp::ButtonEvent::Hold)model.screen=1;else model.screen=4;model.edit=false;dirty=true;}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(model.ham.mute>=0)setHam(4,!model.ham.mute);}}
   if(model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
   if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",1);settingsDirty=false;}lighting(now);
   if((dirty&&now-lastRender>60)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";

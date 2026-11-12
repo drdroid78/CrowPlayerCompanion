@@ -11,11 +11,11 @@ static void disc(int x,int y,int r,uint32_t c){auto*o=lv_obj_create(root);lv_obj
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
   auto*a=lv_arc_create(root);lv_obj_remove_style_all(a);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);lv_arc_set_bg_angles(a,start,end);lv_obj_set_style_arc_width(a,width,LV_PART_MAIN);lv_obj_set_style_arc_color(a,col(c),LV_PART_MAIN);lv_obj_set_style_arc_rounded(a,true,LV_PART_MAIN);lv_obj_set_style_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);lv_obj_remove_flag(a,LV_OBJ_FLAG_CLICKABLE);
 }
-static void ticks(){for(int i=0;i<60;i++){float a=i*6*3.14159265f/180;int r=i%5?111:108;static lv_point_precise_t pts[60][2];pts[i][0]={lv_value_precise_t(120+sin(a)*r),lv_value_precise_t(120-cos(a)*r)};pts[i][1]={lv_value_precise_t(120+sin(a)*115),lv_value_precise_t(120-cos(a)*115)};auto*l=lv_line_create(root);lv_line_set_points(l,pts[i],2);lv_obj_set_style_line_color(l,col(0x34363C),0);lv_obj_set_style_line_width(l,1,0);}}
-static void nav(int screen){for(int i=0;i<5;i++)disc(100+i*10,224,i==screen?3:2,i==screen?accent:0x464950);}
+static void ticks(){for(int i=0;i<60;i++){bool major=i%5==0;float a=i*6*3.14159265f/180;int inner=major?102:108,outer=major?115:114;static lv_point_precise_t pts[60][2];pts[i][0]={lv_value_precise_t(120+sin(a)*inner),lv_value_precise_t(120-cos(a)*inner)};pts[i][1]={lv_value_precise_t(120+sin(a)*outer),lv_value_precise_t(120-cos(a)*outer)};auto*l=lv_line_create(root);lv_line_set_points(l,pts[i],2);lv_obj_set_style_line_color(l,col(major?accent:0x555A64),0);lv_obj_set_style_line_width(l,major?2:1,0);lv_obj_set_style_line_rounded(l,true,0);}}
+static void nav(int screen){for(int i=0;i<6;i++)disc(95+i*10,224,i==screen?3:2,i==screen?accent:0x464950);}
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",178,34,30,&cp_font_16,liked?accent:0xD0D2D5);}
-static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%s",themes[s.theme].name);break;case 1:snprintf(out,n,"%02u:00",s.dayHour);break;case 2:snprintf(out,n,"%02u:00",s.nightHour);break;case 3:snprintf(out,n,"%u%%",s.dayLight);break;case 4:snprintf(out,n,"%u%%",s.nightLight);break;case 5:snprintf(out,n,"%u%%",s.dayLed);break;case 6:snprintf(out,n,"%u%%",s.nightLed);break;case 7:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;}}
+static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"Выбрать оформление →");break;case 1:snprintf(out,n,"%02u:00",s.dayHour);break;case 2:snprintf(out,n,"%02u:00",s.nightHour);break;case 3:snprintf(out,n,"%u%%",s.dayLight);break;case 4:snprintf(out,n,"%u%%",s.nightLight);break;case 5:snprintf(out,n,"%u%%",s.dayLed);break;case 6:snprintf(out,n,"%u%%",s.nightLed);break;case 7:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;}}
 void render(const Model&m,uint32_t now){
   if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);lv_obj_set_style_bg_color(root,col(0x050609),0);lv_obj_set_style_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lv_obj_clean(root);accent=themes[m.settings.theme].rgb;
   char b[160];bool ham=m.ham.online(now);ticks();
@@ -40,11 +40,16 @@ void render(const Model&m,uint32_t now){
     disc(120,118,32,0x101218);ring(120,118,34,0,359,accent,2);label(ham?sourceName(m.ham.source):"--",90,109,60,&cp_font_16);
     if(!ham||!m.ham.count)label("Ожидание HAM",45,174,150,&cp_font_14,0xA5A9AF);
     for(int i=0;ham&&i<m.ham.count;i++){float a=(-90+i*360.0/m.ham.count)*3.14159265/180;int x=120+cos(a)*76,y=118+sin(a)*76;bool active=m.ham.sources[i]==m.ham.source;disc(x,y,21,active?accent:0x22252C);label(sourceName(m.ham.sources[i]),x-23,y-7,46,&cp_font_14,active?0x050609:0xF5F5F5);}
-  }else{
-    static const char* names[]={"Тема","Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
+  }else if(m.screen==4){
+    static const char* names[]={"Темы оформления","Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
     label("НАСТРОЙКИ",40,27,160,&cp_font_14,0xA5A9AF);
     for(int row=-1;row<=1;row++){int key=(m.setting+row+8)%8;int y=63+(row+1)*43;bool selected=!row;if(selected){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,30,y-3);lv_obj_set_size(o,180,42);lv_obj_set_style_radius(o,10,0);lv_obj_set_style_bg_color(o,col(0x1B1F26),0);lv_obj_set_style_bg_opa(o,255,0);}label(names[key],35,y,170,&cp_font_14,selected?accent:0xA5A9AF);settingsText(m,key,b,sizeof b);label(b,33,y+17,174,&cp_font_14,selected?0xF5F5F5:0xA5A9AF);}
     label(m.edit?"Поворот · изменить":"Касание · изменить",30,198,180,&cp_font_14,m.edit?accent:0xA5A9AF);
+  }else{
+    static const char* shortNames[]={"Tornado","Lapiz","Reflex","Indium","Urano","Atlantic","Pure","Škoda"};
+    label("ТЕМА ОФОРМЛЕНИЯ",24,22,192,&cp_font_14,0xA5A9AF);
+    for(int i=0;i<8;i++){int x=25+(i%2)*98,y=51+(i/2)*31;bool selected=m.settings.theme==i;auto*tile=lv_obj_create(root);lv_obj_remove_style_all(tile);lv_obj_set_pos(tile,x,y);lv_obj_set_size(tile,90,27);lv_obj_set_style_radius(tile,8,0);lv_obj_set_style_bg_color(tile,col(selected?0x20242C:0x101218),0);lv_obj_set_style_bg_opa(tile,LV_OPA_COVER,0);lv_obj_set_style_border_width(tile,selected?1:0,0);lv_obj_set_style_border_color(tile,col(themes[i].rgb),0);lv_obj_set_style_border_opa(tile,selected?LV_OPA_COVER:LV_OPA_TRANSP,0);disc(x+12,y+13,7,themes[i].rgb);label(shortNames[i],x+22,y+5,65,&cp_font_14,selected?0xF5F5F5:0xA5A9AF);}
+    label(themes[m.settings.theme].name,25,181,190,&cp_font_16,accent);snprintf(b,sizeof b,"#%06lX",(unsigned long)themes[m.settings.theme].rgb);label(b,25,198,190,&cp_font_14,0xA5A9AF);
   }
   nav(m.screen);
   if(m.notice[0]&&int32_t(m.noticeUntil-now)>0){disc(120,184,48,0x1B1F26);label(m.notice,35,173,170,&cp_font_14);}
