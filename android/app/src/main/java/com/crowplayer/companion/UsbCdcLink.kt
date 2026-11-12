@@ -159,7 +159,7 @@ class UsbCdcLink(
             connectedDeviceId = device.deviceId
             lastStateAt = 0L
             running = true
-            reader = Thread({ readLoop(conn, interfaces.input) }, "crowplayer-usb-reader").apply {
+            reader = Thread({ readLoop(conn, interfaces.input, device.deviceId) }, "crowplayer-usb-reader").apply {
                 isDaemon = true
                 start()
             }
@@ -167,14 +167,29 @@ class UsbCdcLink(
         }
     }
 
-    private fun readLoop(conn: UsbDeviceConnection, input: UsbEndpoint) {
+    private fun readLoop(conn: UsbDeviceConnection, input: UsbEndpoint, deviceId: Int) {
         val buffer = ByteArray(512)
         val line = ByteArray(MAX_LINE_BYTES)
         var size = 0
         var overflow = false
         while (running && connection === conn) {
             val count = try { conn.bulkTransfer(input, buffer, buffer.size, 300) } catch (_: Exception) { -1 }
-            if (count < 0) break
+            if (count < 0) {
+                // A quiet CDC endpoint can report a timed-out read as -1 on some Android
+                // USB host implementations. The panel only sends data for user actions,
+                // so an idle read is normal; the detach broadcast or missing device ends it.
+                val stillAttached = try {
+                    manager.deviceList.values.any { it.deviceId == deviceId }
+                } catch (_: Exception) {
+                    false
+                }
+                if (!stillAttached) break
+                try { Thread.sleep(25) } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+                continue
+            }
             for (i in 0 until count) {
                 val value = buffer[i].toInt() and 0xFF
                 if (value == 10) {
@@ -272,3 +287,4 @@ class UsbCdcLink(
         writer.shutdownNow()
     }
 }
+
