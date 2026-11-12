@@ -3,9 +3,7 @@ package com.crowplayer.companion
 import android.graphics.Bitmap
 
 /**
- * In-process snapshot populated by MusicNotificationListener.
- * This first build is a diagnostic prototype; BLE transport is added after
- * confirming that HarmonyOS exposes the Yandex Music media session.
+ * In-process snapshot populated by MusicNotificationListener and sent to CrowPanel over USB CDC.
  */
 object PlayerSnapshot {
     @Volatile var title: String = "Нет данных о треке"

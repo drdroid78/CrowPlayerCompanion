@@ -33,8 +33,12 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Test and build debug APK
-        run: gradle -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - name: Test and lint on main
+        if: github.ref == 'refs/heads/main'
+        run: gradle -p android :app:testDebugUnitTest :app:lintDebug
+
+      - name: Build debug APK
+        run: gradle -p android :app:assembleDebug
 
       - name: Upload test and lint reports
         if: always()

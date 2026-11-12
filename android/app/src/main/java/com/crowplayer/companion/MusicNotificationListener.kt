@@ -53,6 +53,30 @@ class MusicNotificationListener : NotificationListenerService() {
             }
         }
 
+        fun transport(action: String): Boolean {
+            val controller = activeController ?: return false
+            val actions = controller.playbackState?.actions ?: 0L
+            val flag = when (action) {
+                "play_pause" -> if (controller.playbackState?.state == PlaybackState.STATE_PLAYING)
+                    PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
+                "previous" -> PlaybackState.ACTION_SKIP_TO_PREVIOUS
+                "next" -> PlaybackState.ACTION_SKIP_TO_NEXT
+                else -> return false
+            }
+            if (actions and flag == 0L) return false
+            commandExecutor.execute {
+                try {
+                    when (action) {
+                        "play_pause" -> if (flag == PlaybackState.ACTION_PAUSE) controller.transportControls.pause()
+                            else controller.transportControls.play()
+                        "previous" -> controller.transportControls.skipToPrevious()
+                        "next" -> controller.transportControls.skipToNext()
+                    }
+                } catch (e: Exception) { Log.w("CrowPlayer", "Panel transport command failed", e) }
+            }
+            return true
+        }
+
         fun seekTo(positionMs: Long): Boolean {
             val controller = activeController ?: return false
             if ((controller.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO == 0L) return false

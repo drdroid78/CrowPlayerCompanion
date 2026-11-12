@@ -1,18 +1,15 @@
 package com.crowplayer.companion
 
-import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.ComponentName
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -26,7 +23,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 
@@ -42,12 +38,12 @@ class MainActivity : Activity() {
     private lateinit var playback: TextView
     private lateinit var source: TextView
     private lateinit var art: ImageView
-    private lateinit var bleStatus: TextView
+    private lateinit var usbStatus: TextView
     private lateinit var notificationAccessStatus: TextView
     private lateinit var yandexAccountStatus: TextView
     private lateinit var yandexAccountButton: Button
     private var yandexLogin: YandexLoginDialog? = null
-    private lateinit var ble: BleLink
+    private lateinit var usb: UsbCdcLink
     private lateinit var trackSeekBar: SeekBar
     private var userSeeking = false
     private val prefs by lazy { getSharedPreferences("crowplayer_settings", MODE_PRIVATE) }
@@ -64,10 +60,9 @@ class MainActivity : Activity() {
         window.statusBarColor = Color.rgb(7, 13, 13)
         window.navigationBarColor = Color.rgb(7, 13, 13)
         window.decorView.systemUiVisibility = 0
-        ble = BleLink(this) { message -> runOnUiThread { bleStatus.text = message } }
-        ble.setNightMode(prefs.getBoolean("night_mode", false))
-        ble.setScreenBrightness(prefs.getInt("screen_brightness", 75))
-        ble.setLedBrightness(prefs.getInt("led_brightness", 42))
+        usb = UsbCdcLink(this,
+            onStatus = { message -> runOnUiThread { if (::usbStatus.isInitialized) usbStatus.text = message } },
+            onCommand = { command -> runOnUiThread { handlePanelCommand(command) } })
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -197,9 +192,9 @@ class MainActivity : Activity() {
             background = rounded(Color.rgb(17, 25, 24), 18f)
         }
         linkCard.addView(label("ПОДКЛЮЧЕНИЕ УСТРОЙСТВА", 10f, muted, true, Gravity.START))
-        bleStatus = label("CrowPanel пока не подключён", 14f, Color.WHITE, true, Gravity.START)
-        linkCard.addView(bleStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        val connect = actionButton("ПОДКЛЮЧИТЬ CROWPANEL", true) { requestBlePermissionsAndStart() }
+        usbStatus = label("Подключи панель кабелем USB OTG", 14f, Color.WHITE, true, Gravity.START)
+        linkCard.addView(usbStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        val connect = actionButton("ПОДКЛЮЧИТЬ ПО USB", true) { usb.start() }
         linkCard.addView(connect, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(13) })
         content.addView(linkCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
 
@@ -234,44 +229,8 @@ class MainActivity : Activity() {
                 .setNegativeButton("Закрыть", null)
                 .show()
         }, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(8) })
-        val nightSwitch = Switch(this).apply {
-            text = "Ночной режим дисплея"
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(12), 0, dp(8))
-            isChecked = prefs.getBoolean("night_mode", false)
-            setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean("night_mode", checked).apply(); ble.setNightMode(checked) }
-        }
-        settingsCard.addView(nightSwitch)
-        val encoderSeekSwitch = Switch(this).apply {
-            text = "Энкодер управляет перемоткой"
-            setTextColor(Color.WHITE)
-            isChecked = prefs.getBoolean("encoder_seek", false)
-            setOnCheckedChangeListener { _, checked ->
-                prefs.edit().putBoolean("encoder_seek", checked).apply()
-                ble.setEncoderSeek(checked)
-            }
-        }
-        settingsCard.addView(encoderSeekSwitch)
-        settingsCard.addView(label("ЯРКОСТЬ ЭКРАНА", 10f, muted, true, Gravity.START))
-        val screenSeek = SeekBar(this).apply {
-            max = 95; progress = (prefs.getInt("screen_brightness", 75) - 5).coerceIn(0,95)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) { prefs.edit().putInt("screen_brightness", progress + 5).apply(); ble.setScreenBrightness(progress + 5) } }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            })
-        }
-        settingsCard.addView(screenSeek, LinearLayout.LayoutParams(-1, dp(38)))
-        settingsCard.addView(label("ЯРКОСТЬ ЗЕЛЁНОЙ ПОДСВЕТКИ", 10f, muted, true, Gravity.START))
-        val ledSeek = SeekBar(this).apply {
-            max = 100; progress = prefs.getInt("led_brightness", 42).coerceIn(0,100)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) { prefs.edit().putInt("led_brightness", progress).apply(); ble.setLedBrightness(progress) } }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            })
-        }
-        settingsCard.addView(ledSeek, LinearLayout.LayoutParams(-1, dp(38)))
+        settingsCard.addView(label("Яркость, темы, LED и поведение энкодера настраиваются на самой панели.", 12f, muted, false, Gravity.START),
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         content.addView(settingsCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
 
         source = label("Источник: ожидаем Яндекс Музыку", 10f, muted)
@@ -319,26 +278,10 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
-    private fun requestBlePermissionsAndStart() {
-        if (Build.VERSION.SDK_INT >= 31) {
-            val needed = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-                .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (needed.isNotEmpty()) { requestPermissions(needed.toTypedArray(), 71); return }
-        } else {
-            val needed = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (needed.isNotEmpty()) { requestPermissions(needed.toTypedArray(), 71); return }
-        }
-        ble.start()
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 71 && grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) ble.start()
-    }
     override fun onResume() {
         super.onResume()
         refreshNotificationAccessStatus()
+        usb.start()
         handler.removeCallbacks(refreshTask)
         handler.post(refreshTask)
         if (!prefs.getBoolean("notification_access_prompted", false)) {
@@ -349,8 +292,8 @@ class MainActivity : Activity() {
             }, 350L)
         }
     }
-    override fun onPause() { handler.removeCallbacks(refreshTask); super.onPause() }
-    override fun onDestroy() { yandexLogin?.close(); ble.close(); super.onDestroy() }
+    override fun onPause() { super.onPause() }
+    override fun onDestroy() { handler.removeCallbacks(refreshTask); yandexLogin?.close(); usb.close(); super.onDestroy() }
 
     private fun requestTrackLike() {
         if (likeRequestPending) return
@@ -417,7 +360,36 @@ class MainActivity : Activity() {
                 trackSeekBar.isEnabled = false
             }
         }
-        ble.send(PlayerSnapshot.title, PlayerSnapshot.artist, PlayerSnapshot.playback, PlayerSnapshot.positionMs, PlayerSnapshot.durationMs)
-        ble.sendArtwork(bitmap)
+        usb.sendState()
+    }
+
+    private fun handlePanelCommand(command: org.json.JSONObject) {
+        val id = command.optLong("id", -1L)
+        if (id < 0L) return
+        when (command.optString("action")) {
+            "play_pause", "previous", "next" -> {
+                val ok = MusicNotificationListener.transport(command.optString("action"))
+                usb.sendResult(id, ok, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null)
+            }
+            "like" -> handlePanelLike(command, id)
+            else -> usb.sendResult(id, false, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null)
+        }
+    }
+
+    private fun handlePanelLike(command: org.json.JSONObject, id: Long) {
+        val actual = if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null
+        val sameTrack = command.optString("title").trim().equals(PlayerSnapshot.title.trim(), ignoreCase = true) &&
+            command.optString("artist").trim().equals(PlayerSnapshot.artist.trim(), ignoreCase = true)
+        val desiredValue = command.opt("liked")
+        val desired = desiredValue as? Boolean
+        if (!sameTrack || actual == null || !PlayerSnapshot.likeAvailable || desired == null || desired == actual) {
+            usb.sendResult(id, false, actual)
+            return
+        }
+        MusicNotificationListener.toggleLike { result ->
+            val confirmed = result == MusicNotificationListener.LikeResult.CONFIRMED &&
+                PlayerSnapshot.likeStateKnown && PlayerSnapshot.isLiked == desired
+            usb.sendResult(id, confirmed, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null)
+        }
     }
 }
