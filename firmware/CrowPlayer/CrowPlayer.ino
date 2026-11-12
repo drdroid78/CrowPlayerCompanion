@@ -57,6 +57,7 @@ static void setHam(uint8_t cmd,int value){
 }
 static void volume(int delta){
   uint8_t cmd=model.subSelected&&model.screen==2?3:2;
+  model.volumeOverlay=true;model.volumeOverlaySub=cmd==3;model.volumeOverlayUntil=millis()+1800;dirty=true;
   if(ampPending){if(ampCommand==cmd)queuedVolume=cp::clamp(queuedVolume+delta,-30,30);return;}
   if(cmd==3){if(model.ham.sub!=-128)setHam(3,model.ham.sub+delta);}else if(model.ham.volume>=0)setHam(2,model.ham.volume+delta);else notify("Ожидание громкости",true);
 }
@@ -72,21 +73,27 @@ static void editSetting(int delta){auto&s=model.settings;switch(model.setting){c
 static void rotate(int delta){activity();if(model.screen==5){model.setting=0;editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
 static void tap(int x,int y){
   if(model.screen==0){activity();return;}activity();
-  if(model.screen==1){if(x>=170&&y<80)media("like");else if(y>=96&&y<148){if(x<90)media("previous");else if(x>150)media("next");else media("play_pause");}}
+  if(model.screen==1){if(x>=170&&y<64)media("like");else if(y>=202)media("play_pause");}
   else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
-  else if(model.screen==3&&model.ham.online(millis())){for(int i=0;i<model.ham.count;i++){float a=(-90+i*360.0/model.ham.count)*3.14159265/180;int sx=120+cos(a)*76,sy=118+sin(a)*76;if((x-sx)*(x-sx)+(y-sy)*(y-sy)<25*25)setHam(1,model.ham.sources[i]);}}
+  else if(model.screen==3&&model.ham.online(millis())){for(int i=0;i<model.ham.count&&i<5;i++){int sx,sy;cp::sourcePosition(i,sx,sy);if(abs(x-sx)<29&&abs(y-sy)<36)setHam(1,model.ham.sources[i]);}}
   else if(model.screen==4){if(model.setting==0){model.screen=5;model.edit=false;dirty=true;}else if(y>=95&&y<145){model.edit=!model.edit;saveLater();}else{model.setting=(model.setting+(y<95?7:1))%8;model.edit=false;dirty=true;}}
   else if(model.screen==5){int row=(y-44)/31;int col=x<120?0:1;if(y>=44&&row<4&&x>=24&&x<216){model.settings.theme=row*2+col;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}}
 }
 static bool readTouch(uint8_t reg,uint8_t*out,size_t n){Wire1.beginTransmission(0x15);Wire1.write(reg);if(Wire1.endTransmission(false)!=0)return false;if(Wire1.requestFrom(uint8_t(0x15),uint8_t(n))!=n)return false;for(size_t i=0;i<n;i++)out[i]=Wire1.read();return true;}
 static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uint32_t downAt){
-  int dx=endX-startX,dy=endY-startY;bool asleep=model.screen==0;activity();if(asleep)return;
+  int dx=endX-startX,dy=endY;bool asleep=model.screen==0;activity();if(asleep)return;
   if(abs(dx)>35&&abs(dx)>abs(dy)*1.3){model.screen=1+((model.screen-1+(dx<0?1:4))%5);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
-  else if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){model.setting=0;editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
-  else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
+  else{
+    if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){model.setting=0;editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
+    else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
+  }
 }
-static void touch(uint32_t now){
-  if(now-lastTouch<12)return;lastTouch=now;static bool held=false;static int startX,startY,endX,endY;static uint32_t downAt=0,lastGoodRead=0;uint8_t b[5];
+static void touch(uint32_t now,bool suppress){
+  static bool held=false;static int startX,startY,endX,endY;static uint32_t downAt=0,lastGoodRead=0;
+  // The encoder's physical click can register as a touch on this small panel.
+  // Drop any in-flight touch so it cannot trigger a tap or swipe as well.
+  if(suppress){held=false;return;}
+  if(now-lastTouch<12)return;lastTouch=now;uint8_t b[5];
   if(!readTouch(2,b,5)){if(held&&uint32_t(now-lastGoodRead)>180){held=false;finishTouch(now,startX,startY,endX,endY,downAt);}return;}
   bool pressed=(b[0]&15)>0;int x=((b[1]&15)<<8)|b[2],y=((b[3]&15)<<8)|b[4];if(pressed&&(x>=240||y>=240)){if(held&&uint32_t(now-lastGoodRead)>180){held=false;finishTouch(now,startX,startY,endX,endY,downAt);}return;}lastGoodRead=now;
   if(pressed&&!held){held=true;startX=endX=x;startY=endY=y;downAt=now;}else if(pressed){endX=x;endY=y;}
@@ -153,11 +160,16 @@ void setup(){
   if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
 }
 void loop(){
-  loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);touch(now);
+  loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);
+  static uint32_t touchBlockedUntil=0;bool encoderPressed=digitalRead(41)==LOW;
+  if(encoderPressed)touchBlockedUntil=now+450;
+  touch(now,encoderPressed||int32_t(now-touchBlockedUntil)<0);
+  if(model.volumeOverlay&&int32_t(now-model.volumeOverlayUntil)>=0){model.volumeOverlay=false;dirty=true;}
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
-  auto event=button.update(digitalRead(41)==LOW,now);if(event!=cp::ButtonEvent::None){bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;}else if(model.setting==0){model.screen=5;model.edit=false;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){if(event==cp::ButtonEvent::Hold)model.screen=1;else model.screen=4;model.edit=false;dirty=true;}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(model.ham.mute>=0)setHam(4,!model.ham.mute);}}
+  auto event=button.update(encoderPressed,now);if(event!=cp::ButtonEvent::None){touchBlockedUntil=now+450;bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;}else if(model.setting==0){model.screen=5;model.edit=false;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){if(event==cp::ButtonEvent::Hold)model.screen=1;else model.screen=4;model.edit=false;dirty=true;}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(event==cp::ButtonEvent::Hold)media("previous");}}
   if(!model.playing&&model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
   if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",1);settingsDirty=false;}lighting(now);
   if((dirty&&now-lastRender>60)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
+
