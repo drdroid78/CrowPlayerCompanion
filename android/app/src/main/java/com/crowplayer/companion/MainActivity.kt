@@ -4,7 +4,9 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -43,7 +45,6 @@ class MainActivity : Activity() {
     private lateinit var yandexAccountStatus: TextView
     private lateinit var yandexAccountButton: Button
     private var yandexLogin: YandexLoginDialog? = null
-    private lateinit var usb: UsbCdcLink
     private lateinit var trackSeekBar: SeekBar
     private var userSeeking = false
     private val prefs by lazy { getSharedPreferences("crowplayer_settings", MODE_PRIVATE) }
@@ -51,6 +52,12 @@ class MainActivity : Activity() {
     private val emerald = Color.rgb(0, 190, 125)
     private val muted = Color.rgb(151, 164, 160)
     private val panel = Color.rgb(21, 29, 29)
+    private var usbStatusRegistered = false
+    private val usbStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: Intent) {
+            if (::usbStatus.isInitialized) usbStatus.text = intent.getStringExtra(PanelKeepAliveService.EXTRA_STATUS).orEmpty()
+        }
+    }
     private val refreshTask = object : Runnable {
         override fun run() { renderSnapshot(); handler.postDelayed(this, 250L) }
     }
@@ -60,10 +67,6 @@ class MainActivity : Activity() {
         window.statusBarColor = Color.rgb(7, 13, 13)
         window.navigationBarColor = Color.rgb(7, 13, 13)
         window.decorView.systemUiVisibility = 0
-        usb = UsbCdcLink(this,
-            onStatus = { message -> runOnUiThread { if (::usbStatus.isInitialized) usbStatus.text = message } },
-            onCommand = { command -> runOnUiThread { handlePanelCommand(command) } })
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(12), dp(20), dp(18))
@@ -194,7 +197,7 @@ class MainActivity : Activity() {
         linkCard.addView(label("ПОДКЛЮЧЕНИЕ УСТРОЙСТВА", 10f, muted, true, Gravity.START))
         usbStatus = label("Подключи панель кабелем USB OTG", 14f, Color.WHITE, true, Gravity.START)
         linkCard.addView(usbStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        val connect = actionButton("ПОДКЛЮЧИТЬ ПО USB", true) { usb.start() }
+        val connect = actionButton("ПОДКЛЮЧИТЬ ПО USB", true) { startPanelConnection() }
         linkCard.addView(connect, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(13) })
         content.addView(linkCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
 
@@ -281,9 +284,11 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshNotificationAccessStatus()
-        val keepAlive = Intent(this, PanelKeepAliveService::class.java)
-        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(keepAlive) else startService(keepAlive)
-        usb.start()
+        val statusFilter = IntentFilter(PanelKeepAliveService.ACTION_STATUS)
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(usbStatusReceiver, statusFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        else { @Suppress("DEPRECATION") registerReceiver(usbStatusReceiver, statusFilter) }
+        usbStatusRegistered = true
+        startPanelConnection()
         handler.removeCallbacks(refreshTask)
         handler.post(refreshTask)
         if (!prefs.getBoolean("notification_access_prompted", false)) {
@@ -294,8 +299,17 @@ class MainActivity : Activity() {
             }, 350L)
         }
     }
-    override fun onPause() { super.onPause() }
-    override fun onDestroy() { handler.removeCallbacks(refreshTask); yandexLogin?.close(); usb.close(); super.onDestroy() }
+    override fun onPause() {
+        if (usbStatusRegistered) { unregisterReceiver(usbStatusReceiver); usbStatusRegistered = false }
+        super.onPause()
+    }
+    override fun onDestroy() { handler.removeCallbacks(refreshTask); yandexLogin?.close(); super.onDestroy() }
+
+    private fun startPanelConnection() {
+        if (::usbStatus.isInitialized) usbStatus.text = "Подключаем панель…"
+        val keepAlive = Intent(this, PanelKeepAliveService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(keepAlive) else startService(keepAlive)
+    }
 
     private fun requestTrackLike() {
         if (likeRequestPending) return
@@ -361,42 +375,6 @@ class MainActivity : Activity() {
                 trackSeekBar.progress = 0
                 trackSeekBar.isEnabled = false
             }
-        }
-        usb.sendState()
-    }
-
-    private fun handlePanelCommand(command: org.json.JSONObject) {
-        val id = command.optLong("id", -1L)
-        if (id < 0L) return
-        when (command.optString("action")) {
-            "play_pause", "previous", "next" -> {
-                val ok = MusicNotificationListener.transport(command.optString("action"))
-                usb.sendResult(id, ok, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null)
-            }
-            "like" -> handlePanelLike(command, id)
-            else -> usb.sendResult(id, false, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null)
-        }
-    }
-
-    private fun handlePanelLike(command: org.json.JSONObject, id: Long) {
-        val actual = if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null
-        val sameTrack = command.optString("title").trim().equals(PlayerSnapshot.title.trim(), ignoreCase = true) &&
-            command.optString("artist").trim().equals(PlayerSnapshot.artist.trim(), ignoreCase = true)
-        val desiredValue = command.opt("liked")
-        val desired = desiredValue as? Boolean
-        if (!sameTrack || !PlayerSnapshot.likeAvailable || desired == null || (actual != null && desired == actual)) {
-            val message = when {
-                !sameTrack -> "Трек уже сменился"
-                !PlayerSnapshot.likeAvailable -> "Войди в аккаунт Яндекса в приложении-компаньоне"
-                else -> "Состояние избранного обновляется"
-            }
-            usb.sendResult(id, false, actual, message)
-            return
-        }
-        MusicNotificationListener.toggleLike { result ->
-            val confirmed = result == MusicNotificationListener.LikeResult.CONFIRMED &&
-                PlayerSnapshot.likeStateKnown && PlayerSnapshot.isLiked == desired
-            usb.sendResult(id, confirmed, if (PlayerSnapshot.likeStateKnown) PlayerSnapshot.isLiked else null, result.message)
         }
     }
 }

@@ -113,6 +113,7 @@ class MusicNotificationListener : NotificationListenerService() {
     private val artworkExecutor = Executors.newSingleThreadExecutor()
     private var artworkTrackKey = ""
     private var artworkLoadingKey = ""
+    private var artworkRetryAt = 0L
     private var apiRequestPending = false
     private val poll = object : Runnable {
         override fun run() { updateSnapshot(); handler.postDelayed(this, 1000L) }
@@ -182,6 +183,7 @@ class MusicNotificationListener : NotificationListenerService() {
         yandexLikes = null
         artworkTrackKey = ""
         artworkLoadingKey = ""
+        artworkRetryAt = 0L
         pendingLike?.let { finishLike(it, LikeResult.DISCONNECTED) }
         notifications.clear()
         if (wasActive) PlayerSnapshot.clear()
@@ -374,13 +376,15 @@ class MusicNotificationListener : NotificationListenerService() {
         if (artworkTrackKey != artworkKey) {
             artworkTrackKey = artworkKey
             artworkLoadingKey = ""
+            artworkRetryAt = 0L
             PlayerSnapshot.artwork = null
             PlayerSnapshot.artworkRevision++
         }
         if (artwork != null && PlayerSnapshot.artwork == null) {
             PlayerSnapshot.artwork = artwork
             PlayerSnapshot.artworkRevision++
-        } else if (artwork == null && PlayerSnapshot.artwork == null && !artworkUri.isNullOrBlank() && artworkLoadingKey != artworkKey) {
+        } else if (artwork == null && PlayerSnapshot.artwork == null && !artworkUri.isNullOrBlank() &&
+            artworkLoadingKey != artworkKey && SystemClock.elapsedRealtime() >= artworkRetryAt) {
             artworkLoadingKey = artworkKey
             val token = controller.sessionToken
             artworkExecutor.execute {
@@ -390,6 +394,10 @@ class MusicNotificationListener : NotificationListenerService() {
                     if (loaded != null && current?.sessionToken == token && artworkTrackKey == artworkKey && PlayerSnapshot.artwork == null) {
                         PlayerSnapshot.artwork = loaded
                         PlayerSnapshot.artworkRevision++
+                        artworkRetryAt = 0L
+                    } else if (loaded == null && artworkTrackKey == artworkKey) {
+                        artworkLoadingKey = ""
+                        artworkRetryAt = SystemClock.elapsedRealtime() + 15000L
                     }
                 }
             }
