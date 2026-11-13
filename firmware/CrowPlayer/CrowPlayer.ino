@@ -80,7 +80,7 @@ static void media(const char*action){
 static int b64value(char c){if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;if(c=='+')return 62;if(c=='/')return 63;return -1;}
 static size_t decodeBase64(const char*src,uint8_t*out,size_t cap){uint32_t acc=0;int bits=0;size_t n=0;for(;*src;src++){int v=b64value(*src);if(v<0)break;acc=(acc<<6)|uint32_t(v);bits+=6;if(bits>=8){bits-=8;if(n>=cap)return 0;out[n++]=uint8_t(acc>>bits);}}return n;}
 static void editSetting(int delta){auto&s=model.settings;if(model.screen==5){s.theme=(s.theme+delta%8+8)%8;}else switch(model.setting){case 0:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 1:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 2:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 3:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 4:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 5:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 6:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;case 7:if(abs(delta)%2)s.tabletVolume=!s.tabletVolume;break;}saveLater();}
-static void rotate(int delta){delta=-delta;activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
+static void rotate(int delta){if(model.screen!=4&&model.screen!=5)delta=-delta;activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
 static void tabletVolumeTick(uint32_t now){
   if(int32_t(now-tabletVolumeNextAt)<0)return;
   if(tabletVolumeKeyDown){
@@ -207,3 +207,4 @@ void loop(){
   if((dirty&&now-lastRender>60)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
+
