@@ -52,7 +52,7 @@ static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms
 static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,liked?accent:0xF5F5F5);}
 static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
 static int wheelY(int offset){return 120+offset*33;}
-static int wheelIconX(int offset){int d=offset<0?-offset:offset;return 42+d*9;}
+static int wheelIconX(int offset){const int y=offset*34;return int(lroundf(180.0f-sqrtf(140.0f*140.0f-float(y*y))));}
 static lv_obj_t* wheelHighlight(int offset,int y,uint32_t color,bool editing=false){int x=wheelIconX(offset)-14;auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x,y-15);lv_obj_set_size(o,240-x-14,30);lv_obj_set_style_radius(o,9,0);lv_obj_set_style_bg_color(o,col(0x15191F),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);lv_obj_set_style_border_width(o,editing?2:1,0);lv_obj_set_style_border_color(o,col(color),0);lv_obj_set_style_border_opa(o,LV_OPA_COVER,0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE);return o;}
 static uint32_t settingIconColor(int key){static const uint32_t colors[]={0xD99350,0x1F5FA8,0xDFBD4A,0x6F80B6,0x4BA82E,0x476C3C,0x9C70C3,0x1F5FA8};return colors[key%8];}
 static void settingIcon(int key,int x,int y){uint32_t bg=settingIconColor(key);disc(x,y,10,bg);uint32_t ink=0xF5F5F5;
@@ -128,6 +128,7 @@ void render(const Model&m,uint32_t now){
   if(m.screen!=1&&m.screen!=4&&m.screen!=5)nav(m.screen);
   if(m.volumeOverlay){
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
+    ring(120,120,101,0,359,0x1C2832,1);
     char value[16];int current=m.volumeOverlaySub?m.ham.sub:m.ham.volume;
     if(m.settings.tabletVolume){
       const int progress=clamp(50+m.volumeOverlayDirection*int(m.volumeOverlayAmount)*5,0,100);
