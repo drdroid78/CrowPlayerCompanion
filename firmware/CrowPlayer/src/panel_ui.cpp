@@ -62,7 +62,6 @@ void render(const Model&m,uint32_t now){
   }else if(m.screen==3){
     // Original radial selector: the amplifier's advertised order determines
     // clockwise positions; the center always shows the active input.
-    label("ИСТОЧНИК",55,27,130,&cp_font_14,0xA5A9AF);
     disc(120,118,32,0x101218);ring(120,118,35,0,359,ham&&m.ham.source>=0?accent:0x41454D,2);
     label(ham&&m.ham.source>=0?sourceName(m.ham.source):"--",90,109,60,&cp_font_16);
     const int count=sourceCount(m.ham);
@@ -71,7 +70,7 @@ void render(const Model&m,uint32_t now){
       const bool active=ham&&source==m.ham.source,selected=source==m.sourceSelection;
       disc(x,y,21,active?accent:0x22252C);
       if(selected&&!active)ring(x,y,24,0,359,accent,2);
-      const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?46:42;
+      const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?58:42;
       label(name,x-w/2,y-7,w,&cp_font_14,active?0x050609:0xF5F5F5);
     }
   }else if(m.screen==4){
