@@ -47,7 +47,8 @@ class UsbCdcLink(
     private var registered = false
     @Volatile private var started = false
     private var lastStateAt = 0L
-    private var lastArtworkRevision = Long.MIN_VALUE
+    @Volatile private var lastArtworkRevision = Long.MIN_VALUE
+    @Volatile private var queuedArtworkRevision = Long.MIN_VALUE
     private var lastStatus = ""
 
     private val receiver = object : BroadcastReceiver() {
@@ -169,6 +170,8 @@ class UsbCdcLink(
             output = interfaces.output
             connectedDeviceId = device.deviceId
             lastStateAt = 0L
+            // A newly connected panel has no cached cover, even if Android does.
+            lastArtworkRevision = Long.MIN_VALUE
             running = true
             reader = Thread({ readLoop(conn, interfaces.input, device.deviceId) }, "crowplayer-usb-reader").apply {
                 isDaemon = true
@@ -253,46 +256,64 @@ class UsbCdcLink(
 
     private fun syncArtwork() {
         val revision = PlayerSnapshot.artworkRevision
-        if (revision == lastArtworkRevision) return
-        lastArtworkRevision = revision
+        if (revision == lastArtworkRevision || revision == queuedArtworkRevision) return
+        queuedArtworkRevision = revision
         val bitmap = PlayerSnapshot.artwork
         try {
             writer.execute {
-                val conn = connection ?: return@execute
-                val endpoint = output ?: return@execute
-                if (bitmap == null) {
-                    writeBytes(conn, endpoint, (JSONObject().put("v", 1).put("type", "artwork_clear").toString() + "\n").toByteArray())
-                    return@execute
+                var transferred = false
+                try {
+                    val conn = connection ?: return@execute
+                    val endpoint = output ?: return@execute
+                    if (bitmap == null) {
+                        transferred = writeBytes(conn, endpoint,
+                            (JSONObject().put("v", 1).put("type", "artwork_clear").toString() + "\n").toByteArray())
+                        return@execute
+                    }
+                    val readable = if (bitmap.config == Bitmap.Config.HARDWARE)
+                        bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: return@execute
+                    else bitmap
+                    val scaled = if (readable.width == 96 && readable.height == 96) readable
+                        else Bitmap.createScaledBitmap(readable, 96, 96, true)
+                    val raw = try {
+                        val pixels = IntArray(96 * 96)
+                        scaled.getPixels(pixels, 0, 96, 0, 0, 96, 96)
+                        ByteArray(pixels.size * 2).also { bytes ->
+                            for (i in pixels.indices) {
+                                val color = pixels[i]
+                                val rgb565 = (((color ushr 16) and 0xF8) shl 8) or
+                                    (((color ushr 8) and 0xFC) shl 3) or ((color and 0xFF) ushr 3)
+                                bytes[i * 2] = rgb565.toByte()
+                                bytes[i * 2 + 1] = (rgb565 ushr 8).toByte()
+                            }
+                        }
+                    } finally {
+                        if (scaled !== readable) scaled.recycle()
+                        if (readable !== bitmap) readable.recycle()
+                    }
+                    val chunks = (raw.size + 899) / 900
+                    if (!writeBytes(conn, endpoint, line(JSONObject().put("v", 1).put("type", "artwork_start")
+                            .put("width", 96).put("height", 96).put("bytes", raw.size).put("chunks", chunks)))) return@execute
+                    var offset = 0
+                    while (offset < raw.size && connection === conn) {
+                        val length = minOf(900, raw.size - offset)
+                        val data = Base64.encodeToString(raw.copyOfRange(offset, offset + length), Base64.NO_WRAP)
+                        val packet = JSONObject().put("v", 1).put("type", "artwork_chunk").put("offset", offset).put("data", data)
+                        if (!writeBytes(conn, endpoint, line(packet))) return@execute
+                        offset += length
+                    }
+                    transferred = offset == raw.size && writeBytes(conn, endpoint,
+                        line(JSONObject().put("v", 1).put("type", "artwork_end")))
+                } catch (_: Exception) {
+                    // Leave this revision unacknowledged so the next state tick retries it.
+                } finally {
+                    if (transferred && PlayerSnapshot.artworkRevision == revision) lastArtworkRevision = revision
+                    if (queuedArtworkRevision == revision) queuedArtworkRevision = Long.MIN_VALUE
                 }
-                val width = 96
-                val height = 96
-                val scaled = if (bitmap.width == width && bitmap.height == height) bitmap
-                    else Bitmap.createScaledBitmap(bitmap, width, height, true)
-                val pixels = IntArray(width * height)
-                scaled.getPixels(pixels, 0, width, 0, 0, width, height)
-                val raw = ByteArray(pixels.size * 2)
-                for (i in pixels.indices) {
-                    val color = pixels[i]
-                    val rgb565 = (((color ushr 16) and 0xF8) shl 8) or
-                        (((color ushr 8) and 0xFC) shl 3) or ((color and 0xFF) ushr 3)
-                    raw[i * 2] = rgb565.toByte()
-                    raw[i * 2 + 1] = (rgb565 ushr 8).toByte()
-                }
-                if (scaled !== bitmap) scaled.recycle()
-                val chunks = (raw.size + 899) / 900
-                if (!writeBytes(conn, endpoint, line(JSONObject().put("v", 1).put("type", "artwork_start")
-                        .put("width", width).put("height", height).put("bytes", raw.size).put("chunks", chunks)))) return@execute
-                var offset = 0
-                while (offset < raw.size && connection === conn) {
-                    val length = minOf(900, raw.size - offset)
-                    val data = Base64.encodeToString(raw.copyOfRange(offset, offset + length), Base64.NO_WRAP)
-                    val packet = JSONObject().put("v", 1).put("type", "artwork_chunk").put("offset", offset).put("data", data)
-                    if (!writeBytes(conn, endpoint, line(packet))) return@execute
-                    offset += length
-                }
-                writeBytes(conn, endpoint, line(JSONObject().put("v", 1).put("type", "artwork_end")))
             }
-        } catch (_: java.util.concurrent.RejectedExecutionException) {}
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            if (queuedArtworkRevision == revision) queuedArtworkRevision = Long.MIN_VALUE
+        }
     }
 
     private fun line(json: JSONObject) = (json.toString() + "\n").toByteArray(Charsets.UTF_8)
@@ -366,3 +387,4 @@ class UsbCdcLink(
         writer.shutdownNow()
     }
 }
+
