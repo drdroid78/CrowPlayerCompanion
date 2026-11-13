@@ -60,18 +60,23 @@ void render(const Model&m,uint32_t now){
     ring(177,104,33,135,405,0x292C33,2);if(ham&&m.ham.sub!=-128)snprintf(b,sizeof b,"%d",m.ham.sub);else strcpy(b,"--");label(b,147,91,60,&cp_font_16);label("САБ",148,148,58,&cp_font_14,m.subSelected?accent:0xA5A9AF);
     if(ham&&m.ham.mute>=0)label(m.ham.mute==1?"MUTE · ВКЛ":"MUTE · ВЫКЛ",40,182,160,&cp_font_16,m.ham.mute==1?accent:0xD0D2D5);
   }else if(m.screen==3){
-    // Show the five verified HAM8.100DSP inputs immediately, including while
-    // the amplifier is starting or temporarily offline.
-    static constexpr uint8_t fallbackSources[]={0,4,5,2,6};
-    const bool haveSourceList=ham&&m.ham.count>0;
-    const int count=haveSourceList?std::min<int>(m.ham.count,5):5;
-    for(int i=0;i<count;i++){
-      int x,y;sourcePosition(i,x,y);int source=haveSourceList?m.ham.sources[i]:fallbackSources[i];bool active=m.ham.source>=0&&source==m.ham.source;
-      if(active){auto*tile=lv_obj_create(root);lv_obj_remove_style_all(tile);lv_obj_set_pos(tile,x-28,y-32);lv_obj_set_size(tile,56,66);lv_obj_set_style_radius(tile,10,0);lv_obj_set_style_bg_color(tile,col(0x11151B),0);lv_obj_set_style_bg_opa(tile,LV_OPA_COVER,0);lv_obj_set_style_border_width(tile,1,0);lv_obj_set_style_border_color(tile,col(accent),0);}
-      uint32_t iconColor=active?accent:(ham?0xF5F5F5:0x858A92);
-      drawSourceIcon(source,x,y-9,iconColor);
-      const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?70:54;label(name,x-w/2,y+12,w,&cp_font_14,active?accent:(ham?0xD0D2D5:0x858A92));
+    // Restore the earlier radial selector. The center reports the amplifier's
+    // active input while the encoder cursor highlights one of the five choices.
+    for(int i=0;i<5;i++){
+      const int source=sourceAt(i);int x,y;sourcePosition(i,x,y);
+      const bool selected=m.sourceSelection==source,active=m.ham.source==source;
+      auto*tile=lv_obj_create(root);lv_obj_remove_style_all(tile);lv_obj_set_pos(tile,x-26,y-26);lv_obj_set_size(tile,52,52);
+      lv_obj_set_style_radius(tile,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_color(tile,col(selected?0x111821:0x0B0D12),0);lv_obj_set_style_bg_opa(tile,LV_OPA_COVER,0);
+      lv_obj_set_style_border_width(tile,selected?2:(active?1:0),0);lv_obj_set_style_border_color(tile,col(accent),0);
+      const uint32_t iconColor=selected?accent:(ham?0xE0E2E5:0x858A92);
+      drawSourceIcon(source,x,y-7,iconColor);
+      const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?52:44;
+      label(name,x-w/2,y+7,w,&cp_font_12,selected?accent:(ham?0xD0D2D5:0x858A92));
+      if(active)disc(x+19,y-19,2,accent);
     }
+    disc(120,118,32,0x101218);ring(120,118,35,0,359,m.ham.source>=0?accent:0x41454D,2);
+    label(m.ham.source>=0?sourceName(m.ham.source):"--",75,105,90,&cp_font_16,0xF5F5F5);
+    if(m.ham.source>=0)label("АКТИВЕН",82,126,76,&cp_font_12,accent);
   }else if(m.screen==4){
     static const char* names[]={"Темы оформления","Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
     label("НАСТРОЙКИ",40,27,160,&cp_font_14,0xA5A9AF);
