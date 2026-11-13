@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 #include <algorithm>
 namespace cp {
 template<class T> T clamp(T v,T lo,T hi){return std::min(hi,std::max(lo,v));}
@@ -55,9 +56,10 @@ struct HamState {
   bool advertised(uint8_t id)const{for(int i=0;i<count;i++)if(sources[i]==id)return true;return false;}
 };
 inline const char* sourceName(int id){static const char* names[]={"OPT","COAX","BT","AUX","AUX IN","HIGH","USB","UDP","SCP"};return id>=0&&id<9?names[id]:"--";}
-inline uint8_t sourceAt(int i){static const uint8_t ids[5]={2,5,6,0,4};return ids[clamp(i,0,4)];}
-inline int sourceIndex(int id){for(int i=0;i<5;i++)if(sourceAt(i)==id)return i;return -1;}
-inline void sourcePosition(int i,int&x,int&y){static const int xs[5]={120,56,184,82,158},ys[5]={48,104,104,178,178};i=clamp(i,0,4);x=xs[i];y=ys[i];}
+inline int sourceCount(const HamState&s){return s.count?std::min<int>(s.count,5):5;}
+inline uint8_t sourceAt(const HamState&s,int i){static const uint8_t fallback[5]={0,4,5,2,6};int count=sourceCount(s);i=clamp(i,0,count-1);return s.count?s.sources[i]:fallback[i];}
+inline int sourceIndex(const HamState&s,int id){for(int i=0;i<sourceCount(s);i++)if(sourceAt(s,i)==id)return i;return -1;}
+inline void sourcePosition(int i,int count,int&x,int&y){count=clamp(count,1,5);i=clamp(i,0,count-1);float a=(-90.0f+i*360.0f/count)*0.01745329252f;x=120+int(cosf(a)*76);y=118+int(sinf(a)*76);}
 struct Packet {uint8_t bytes[68]={};size_t size=0;};
 inline Packet packet(uint8_t group,uint8_t command,uint8_t type,const uint8_t*data=nullptr,size_t n=0){
   Packet p;if(n>61)return p;p.size=n+7;p.bytes[0]=0xAA;p.bytes[1]=0x77;p.bytes[2]=n+3;p.bytes[3]=group;p.bytes[4]=command;p.bytes[5]=type;
