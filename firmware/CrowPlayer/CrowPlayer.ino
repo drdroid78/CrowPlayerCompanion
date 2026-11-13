@@ -1,4 +1,4 @@
-// Copyright (c) 2026 DrDoid78. Author: DrDoid78.
+// Copyright (c) 2026 DrDroid78. Author: DrDroid78.
 // Native USB companion + inverted 1.8 V Hellion UART (external level shifter).
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
@@ -189,7 +189,7 @@ static void lighting(uint32_t now){
 }
 void setup(){
   pinMode(1,OUTPUT);digitalWrite(1,HIGH);pinMode(2,OUTPUT);digitalWrite(2,HIGH);pinMode(40,OUTPUT);digitalWrite(40,LOW);
-  tablet.begin(115200);consumerControl.begin();USB.manufacturerName("DrDoid78");USB.productName("CrowPanel Skoda Edition");USB.begin();
+  tablet.begin(115200);consumerControl.begin();USB.manufacturerName("DrDroid78");USB.productName("CrowPanel Skoda Edition");USB.begin();
   xTaskCreate(bootMonitor,"boot-monitor",3072,nullptr,1,nullptr);
   bootStage="encoder";
   pinMode(45,INPUT_PULLUP);pinMode(42,INPUT_PULLUP);pinMode(41,INPUT_PULLUP);encoderPrevious=(digitalRead(45)<<1)|digitalRead(42);attachInterrupt(45,onEncoder,CHANGE);attachInterrupt(42,onEncoder,CHANGE);
