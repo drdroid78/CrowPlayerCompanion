@@ -116,7 +116,13 @@ void render(const Model&m,uint32_t now){
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
     ring(120,110,68,135,405,0x252830,4);
     char value[16];int current=m.volumeOverlaySub?m.ham.sub:m.ham.volume;
-    if(m.settings.tabletVolume){strcpy(value,"HID");label(value,38,85,164,&cp_font_44,0xF5F5F5);label("ГРОМКОСТЬ · ПЛАНШЕТ",20,177,200,&cp_font_14,accent);}
+    if(m.settings.tabletVolume){
+      int span=std::max(1,int(m.volumeOverlayAmount)*270/10);
+      if(m.volumeOverlayDirection>0)ring(120,110,68,135,135+span,accent,5);
+      else ring(120,110,68,405-span,405,accent,5);
+      label(m.volumeOverlayDirection>0?"UP":"DOWN",38,85,164,&cp_font_16,0xF5F5F5);
+      label("ГРОМКОСТЬ",26,177,188,&cp_font_14,accent);
+    }
     else if(ham&&current!=(m.volumeOverlaySub?-128:-1)){
       snprintf(value,sizeof value,"%d",current);
       int progress=m.volumeOverlaySub?clamp(current+60,0,60)*270/60:clamp(current,0,66)*270/66;
@@ -126,4 +132,3 @@ void render(const Model&m,uint32_t now){
   }
 }
 }
-
