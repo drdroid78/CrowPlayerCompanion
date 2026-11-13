@@ -114,8 +114,8 @@ static void tap(int x,int y){
   else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
   else if(model.screen==3){int count=cp::sourceCount(model.ham);for(int i=0;i<count;i++){int sx,sy;cp::sourcePosition(i,count,sx,sy);if(abs(x-sx)<23&&abs(y-sy)<23){model.sourceSelection=cp::sourceAt(model.ham,i);dirty=true;setHam(1,model.sourceSelection);break;}}}
   else if(model.screen==4||model.screen==5){
-    if(y>=35&&y<210){int row=(y-35)/35,offset=row-2,dy=offset*34;int inset=int(lroundf(180.0f-sqrtf(140.0f*140.0f-float(dy*dy))))-14;
-      if(x>=inset&&x<240-inset){
+    if(y>=35&&y<210){int row=(y-35)/35,offset=row-2,dy=offset*41;int inset=int(lroundf(125.0f-sqrtf(100.0f*100.0f-float(dy*dy))))-16;
+      if(x>=inset&&x<236){
         if(model.screen==4){int selected=(model.setting+offset+8)%8;if(offset==0){model.edit=!model.edit;saveLater();}else{model.setting=selected;model.edit=false;}dirty=true;}
         else{model.settings.theme=(model.settings.theme+offset+8)%8;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}
       }
