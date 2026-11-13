@@ -1,0 +1,7 @@
+Copyright (c) 2026 DrDoid78.
+
+Project-specific CrowPanel Škoda Edition firmware, display interface, original project assets, build scripts, and system integration are authored by DrDoid78.
+
+Third-party libraries and components retain their respective licenses and copyright notices.
+
+Release baseline: v1.0.0-design — first design-complete version.

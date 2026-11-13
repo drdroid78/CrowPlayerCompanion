@@ -1,3 +1,4 @@
+// Copyright (c) 2026 DrDoid78. Author: DrDoid78.
 #include "panel_ui.h"
 #include <math.h>
 namespace cp {
