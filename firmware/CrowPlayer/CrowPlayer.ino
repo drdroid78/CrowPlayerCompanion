@@ -29,8 +29,9 @@ static volatile int32_t encoderSteps=0;static volatile uint8_t encoderPrevious=3
 static DRAM_ATTR const int8_t encoderTable[16]={0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
 static bool dirty=true,settingsDirty=false,otaReady=false;static uint32_t settingsAt=0,lastRender=0,lastTick=0,lastPoll=0,lastTouch=0,lastLed=0,effectAt=0;
 static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendingId=0,usbPendingAt=0;
-static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0;static float brightness=18;
-static int queuedVolume=0;
+static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0,lastVolumeSetAt=0;static float brightness=18;
+static int queuedVolume=0;static uint8_t queuedVolumeCommand=2;
+static int8_t tabletVolumeQueued=0;static bool tabletVolumeKeyDown=false;static uint16_t tabletVolumeKey=0;static uint32_t tabletVolumeNextAt=0;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
 alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
 static const char* volatile bootStage="starting";
@@ -56,18 +57,18 @@ static void sendHam(uint8_t cmd,uint8_t op,const uint8_t*data=nullptr,size_t n=0
 static void setHam(uint8_t cmd,int value){
   if(!model.ham.online(millis())){notify("Нет связи с HAM",true);return;}if(ampPending)return;
   uint8_t raw=0;if(cmd==1){if(!model.ham.advertised(value))return;raw=0x51+value;}else if(cmd==2){value=cp::clamp(value,0,60);raw=0x42-value;}else if(cmd==3){value=cp::clamp(value,-60,0);raw=uint8_t(-value);}else if(cmd==4)raw=value?1:0;else return;
-  ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
+  ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();if(cmd==2||cmd==3)lastVolumeSetAt=ampPendingAt;model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
 }
 static void volume(int delta){
+  model.volumeOverlayDirection=delta>0?1:-1;model.volumeOverlayAmount=cp::clamp(abs(delta),1,10);
   if(model.settings.tabletVolume){
-    if(!model.usb){notify("Отключён планшет",true);return;}
-    uint16_t key=delta>0?CONSUMER_CONTROL_VOLUME_INCREMENT:CONSUMER_CONTROL_VOLUME_DECREMENT;
-    for(int i=0;i<abs(delta);i++){consumerControl.press(key);consumerControl.release();delay(8);}
+    tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta,-30,30);
     model.volumeOverlay=true;model.volumeOverlaySub=false;model.volumeOverlayUntil=millis()+1300;dirty=true;return;
   }
   uint8_t cmd=model.subSelected&&model.screen==2?3:2;
   model.volumeOverlay=true;model.volumeOverlaySub=cmd==3;model.volumeOverlayUntil=millis()+1800;dirty=true;
-  if(ampPending){if(ampCommand==cmd)queuedVolume=cp::clamp(queuedVolume+delta,-30,30);return;}
+  if(ampPending){if(ampCommand==cmd){queuedVolume=cp::clamp(queuedVolume+delta,-30,30);queuedVolumeCommand=cmd;}return;}
+  if((cmd==2||cmd==3)&&uint32_t(millis()-lastVolumeSetAt)<100){if(!queuedVolume)queuedVolumeCommand=cmd;if(queuedVolumeCommand==cmd)queuedVolume=cp::clamp(queuedVolume+delta,-30,30);return;}
   if(cmd==3){if(model.ham.sub!=-128)setHam(3,model.ham.sub+delta);}else if(model.ham.volume>=0)setHam(2,model.ham.volume+delta);else notify("Ожидание громкости",true);
 }
 static void media(const char*action){
@@ -79,7 +80,21 @@ static void media(const char*action){
 static int b64value(char c){if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;if(c=='+')return 62;if(c=='/')return 63;return -1;}
 static size_t decodeBase64(const char*src,uint8_t*out,size_t cap){uint32_t acc=0;int bits=0;size_t n=0;for(;*src;src++){int v=b64value(*src);if(v<0)break;acc=(acc<<6)|uint32_t(v);bits+=6;if(bits>=8){bits-=8;if(n>=cap)return 0;out[n++]=uint8_t(acc>>bits);}}return n;}
 static void editSetting(int delta){auto&s=model.settings;if(model.screen==5){s.theme=(s.theme+delta%8+8)%8;}else switch(model.setting){case 0:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 1:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 2:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 3:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 4:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 5:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 6:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;case 7:if(abs(delta)%2)s.tabletVolume=!s.tabletVolume;break;}saveLater();}
-static void rotate(int delta){activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
+static void rotate(int delta){delta=-delta;activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
+static void tabletVolumeTick(uint32_t now){
+  if(int32_t(now-tabletVolumeNextAt)<0)return;
+  if(tabletVolumeKeyDown){
+    if(consumerControl.release()){tabletVolumeKeyDown=false;tabletVolumeNextAt=now+12;}
+    else tabletVolumeNextAt=now+20;
+    return;
+  }
+  if(!tabletVolumeQueued)return;
+  const bool up=tabletVolumeQueued>0;
+  tabletVolumeQueued+=up?-1:1;
+  tabletVolumeKey=up?CONSUMER_CONTROL_VOLUME_INCREMENT:CONSUMER_CONTROL_VOLUME_DECREMENT;
+  if(consumerControl.press(tabletVolumeKey)){tabletVolumeKeyDown=true;tabletVolumeNextAt=now+35;}
+  else{tabletVolumeQueued=0;notify("HID громкости недоступен",true);tabletVolumeNextAt=now+100;}
+}
 static void tap(int x,int y){
   if(model.screen==0){activity();return;}activity();
   if(model.screen==1){if(x>=170&&y<64)media("like");else if(y>=202)media("play_pause");}
@@ -142,7 +157,7 @@ static void hamReceive(uint32_t now){
       if(actual==ampTarget){ampPending=false;model.requestPending=false;effect=ampCommand==2?4:2;effectAt=now;}else if(ampAck){ampPending=false;model.requestPending=false;notify("HAM изменил значение",true);}}}
   }
   if(ampPending&&now-ampPendingAt>1000){ampPending=false;queuedVolume=0;model.requestPending=false;notify("HAM: нет подтверждения",true);}
-  if(!ampPending&&queuedVolume){int delta=queuedVolume;queuedVolume=0;uint8_t cmd=ampCommand;if(model.ham.online(now)){if(cmd==2)setHam(2,model.ham.volume+delta);else if(cmd==3)setHam(3,model.ham.sub+delta);}}
+  if(!ampPending&&queuedVolume&&uint32_t(now-lastVolumeSetAt)>=100){int delta=queuedVolume;uint8_t cmd=queuedVolumeCommand;queuedVolume=0;if(model.ham.online(now)){if(cmd==2)setHam(2,model.ham.volume+delta);else if(cmd==3)setHam(3,model.ham.sub+delta);}}
   if(!ampPending&&now-lastPoll>200){static const uint8_t commands[]={0,4,2,3,1};sendHam(commands[pollIndex++%5],0x66);lastPoll=now;}
 }
 static void lighting(uint32_t now){
@@ -185,10 +200,10 @@ void loop(){
   touch(now,encoderPressed||int32_t(now-touchBlockedUntil)<0);
   if(model.volumeOverlay&&int32_t(now-model.volumeOverlayUntil)>=0){model.volumeOverlay=false;dirty=true;}
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
+  tabletVolumeTick(now);
   auto event=button.update(encoderPressed,now);if(event!=cp::ButtonEvent::None){touchBlockedUntil=now+450;bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){model.screen=1;model.edit=false;dirty=true;}else if(model.screen==3){if(event==cp::ButtonEvent::Single&&model.sourceSelection>=0)setHam(1,model.sourceSelection);else if(event==cp::ButtonEvent::Hold){model.screen=1;dirty=true;}}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(event==cp::ButtonEvent::Hold)media("previous");}}
   if(!model.playing&&model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
   if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);settingsDirty=false;}lighting(now);
   if((dirty&&now-lastRender>60)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
-
