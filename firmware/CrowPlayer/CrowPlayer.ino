@@ -81,10 +81,12 @@ static void tap(int x,int y){
 }
 static bool readTouch(uint8_t reg,uint8_t*out,size_t n){Wire1.beginTransmission(0x15);Wire1.write(reg);if(Wire1.endTransmission(false)!=0)return false;if(Wire1.requestFrom(uint8_t(0x15),uint8_t(n))!=n)return false;for(size_t i=0;i<n;i++)out[i]=Wire1.read();return true;}
 static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uint32_t downAt){
-  int dx=endX-startX,dy=endY;bool asleep=model.screen==0;activity();if(asleep)return;
-  if(abs(dx)>35&&abs(dx)>abs(dy)*1.3){model.screen=1+((model.screen-1+(dx<0?1:4))%5);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
+  int dx=endX-startX,dy=endY-startY;bool asleep=model.screen==0;activity();if(asleep)return;
+  // Use the full movement vector so short, slightly diagonal swipes still
+  // navigate predictably on the small round touch surface.
+  if(abs(dx)>=24&&abs(dx)*10>=abs(dy)*11){model.screen=1+((model.screen-1+(dx<0?1:4))%5);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
   else{
-    if(abs(dy)>25&&abs(dy)>abs(dx)*1.3){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){model.setting=0;editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
+    if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){model.setting=0;editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
     else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
   }
 }
