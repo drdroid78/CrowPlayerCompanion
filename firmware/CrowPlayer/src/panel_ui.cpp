@@ -45,13 +45,13 @@ static void nav(int screen){for(int i=0;i<6;i++)disc(95+i*10,224,i==screen?3:2,i
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,liked?accent:0xF5F5F5);}
 static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
-static int wheelY(int offset){return 120+offset*41;}
-static int wheelIconX(int offset){const int y=offset*41;return int(lroundf(125.0f-sqrtf(100.0f*100.0f-float(y*y))));}
-static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=selected?0x102A38:0x11151B;uint32_t ink=selected?accent:0x858D97;disc(x,y,selected?12:10,bg);outlineCircle(x,y,selected?25:21,selected?accent:0x3C434D);
-  if(key==0||key==1||key==6){outlineCircle(x,y,12,ink);line(x,y,x,y-4,ink,1);line(x,y,x+4,y+2,ink,1);}
-  else if(key==2||key==4){disc(x,y,3,ink);line(x,y-8,x,y-5,ink,1);line(x,y+5,x,y+8,ink,1);line(x-8,y,x-5,y,ink,1);line(x+5,y,x+8,y,ink,1);line(x-6,y-6,x-4,y-4,ink,1);line(x+4,y+4,x+6,y+6,ink,1);}
-  else if(key==3){disc(x-2,y-1,6,ink);disc(x+2,y-4,6,bg);}
-  else if(key==7){line(x-5,y-1,x+5,y-1,ink,1);line(x-5,y+3,x+5,y+3,ink,1);line(x-3,y-5,x+3,y-5,ink,1);line(x-3,y-5,x-3,y-2,ink,1);line(x+3,y-5,x+3,y-2,ink,1);}
+static int wheelY(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(120.0f+100.0f*sinf(angle)));}
+static int wheelIconX(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(125.0f-100.0f*cosf(angle)));}
+static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=selected?0x102A38:0x11151B;uint32_t ink=selected?accent:0xAAB2BD;disc(x,y,selected?12:11,bg);outlineCircle(x,y,selected?25:23,selected?accent:0x434B56);
+  if(key==0||key==1||key==6){outlineCircle(x,y,13,ink);line(x,y,x,y-4,ink,2);line(x,y,x+4,y+2,ink,2);if(key==6){line(x,y-9,x,y-7,ink,2);line(x-2,y-8,x+2,y-8,ink,2);}}
+  else if(key==2||key==4){disc(x,y,3,ink);line(x,y-9,x,y-6,ink,2);line(x,y+6,x,y+9,ink,2);line(x-9,y,x-6,y,ink,2);line(x+6,y,x+9,y,ink,2);line(x-7,y-7,x-5,y-5,ink,2);line(x+5,y+5,x+7,y+7,ink,2);line(x+5,y-5,x+7,y-7,ink,2);line(x-7,y+7,x-5,y+5,ink,2);}
+  else if(key==3||key==5){disc(x-1,y,7,ink);disc(x+4,y-3,7,bg);}
+  else if(key==7){line(x-7,y-3,x-4,y-3,ink,2);line(x-4,y-3,x,y-6,ink,2);line(x,y-6,x,y+6,ink,2);line(x,y+6,x-4,y+3,ink,2);line(x-4,y+3,x-7,y+3,ink,2);line(x-7,y+3,x-7,y-3,ink,2);line(x+3,y-4,x+5,y-2,ink,2);line(x+5,y-2,x+5,y+2,ink,2);line(x+5,y+2,x+3,y+4,ink,2);}
   else{disc(x,y,4,ink);}
 }
 void render(const Model&m,uint32_t now){
@@ -134,4 +134,3 @@ void render(const Model&m,uint32_t now){
   }
 }
 }
-

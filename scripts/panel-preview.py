@@ -8,11 +8,9 @@ for f in p.glob('*.ppm'):
     image.putalpha(mask); image.save(f.with_suffix('.png'))
 font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',22)
 out=Image.new('RGB',(1120,790),'#101218'); d=ImageDraw.Draw(out)
-names=['Дежурный экран','Музыка','Звук','Источники','Настройки']
+names=['Дежурный экран','Музыка','Звук','Источники','Настройки','Темы']
 for s,name in enumerate(names):
-    x=40+(s%3)*360; y=35+(s//3)*375
+    x=40+(s%3)*360; y=25+(s//3)*375
     image=Image.open(p/f'theme-1-screen-{s}.png').resize((300,300),Image.Resampling.LANCZOS)
     out.paste(image,(x,y),image);d.text((x+150,y+317),name,font=font,fill='#e0e3e8',anchor='mt')
-d.text((760,560),'240 × 240 · LVGL',font=font,fill='#a5a9af')
-d.text((760,595),'Демонстрационные данные',font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',16),fill='#a5a9af')
 out.save(p/'interface.png')
