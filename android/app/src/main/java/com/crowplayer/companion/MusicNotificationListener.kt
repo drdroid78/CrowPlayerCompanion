@@ -8,6 +8,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -207,6 +208,17 @@ class MusicNotificationListener : NotificationListenerService() {
         )
     }
 
+    @Suppress("DEPRECATION")
+    private fun notificationArtwork(packageName: String): Bitmap? {
+        val notification = notifications.values
+            .filter { it.packageName == packageName }
+            .maxByOrNull { it.postTime }?.notification ?: return null
+        val extras = notification.extras
+        return if (Build.VERSION.SDK_INT >= 33)
+            extras.getParcelable(Notification.EXTRA_LARGE_ICON, Bitmap::class.java)
+        else extras.getParcelable(Notification.EXTRA_LARGE_ICON) as? Bitmap
+    }
+
     private fun matches(request: LikeRequest, controller: MediaController): Boolean =
         controller.sessionToken == request.token && track(controller) == request.track
 
@@ -361,8 +373,12 @@ class MusicNotificationListener : NotificationListenerService() {
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST) ?: "Исполнитель неизвестен"
         val artwork = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+            ?: if (YandexLikes.isYandex(controller.packageName)) notificationArtwork(controller.packageName) else null
         val artworkUri = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_ART_URI)
+        val yandexTrackId = if (YandexLikes.isYandex(controller.packageName))
+            YandexTrackMatcher.mediaId(track(controller).mediaId) else null
+        val yandexAccess = if (yandexTrackId != null) YandexAccountStore.get(this).read()?.access else null
         PlayerSnapshot.title = title.take(80)
         PlayerSnapshot.artist = artist.take(80)
         PlayerSnapshot.album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: ""
@@ -383,12 +399,19 @@ class MusicNotificationListener : NotificationListenerService() {
         if (artwork != null && PlayerSnapshot.artwork == null) {
             PlayerSnapshot.artwork = artwork
             PlayerSnapshot.artworkRevision++
-        } else if (artwork == null && PlayerSnapshot.artwork == null && !artworkUri.isNullOrBlank() &&
+        } else if (artwork == null && PlayerSnapshot.artwork == null &&
+            (!artworkUri.isNullOrBlank() || (yandexTrackId != null && yandexAccess != null)) &&
             artworkLoadingKey != artworkKey && SystemClock.elapsedRealtime() >= artworkRetryAt) {
             artworkLoadingKey = artworkKey
             val token = controller.sessionToken
             artworkExecutor.execute {
-                val loaded = runCatching { ArtworkLoader.load(this, artworkUri) }.getOrNull()
+                val loaded = runCatching {
+                    ArtworkLoader.load(this, artworkUri.orEmpty()) ?: run {
+                        val coverUri = if (yandexTrackId != null && yandexAccess != null)
+                            YandexMusicApi().coverUri(yandexAccess, yandexTrackId) else null
+                        if (coverUri != null) ArtworkLoader.load(this, coverUri) else null
+                    }
+                }.getOrNull()
                 handler.post {
                     val current = activeController
                     if (loaded != null && current?.sessionToken == token && artworkTrackKey == artworkKey && PlayerSnapshot.artwork == null) {
@@ -417,3 +440,4 @@ class MusicNotificationListener : NotificationListenerService() {
         PlayerSnapshot.lastUpdated = System.currentTimeMillis()
     }
 }
+

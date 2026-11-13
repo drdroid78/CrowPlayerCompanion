@@ -172,6 +172,20 @@ internal class YandexMusicApi(private val transport: YandexTransport = YandexHtt
             .distinctBy { it.id }
     }
 
+    fun coverUri(token: String, trackId: String): String? {
+        if (!trackId.matches(Regex("[0-9]+"))) return null
+        val tracks = transport.execute(YandexHttpRequest("api.music.yandex.net", "/tracks", "POST",
+            mapOf("track-ids" to trackId), token)).optJSONArray("result") ?: return null
+        val track = tracks.optJSONObject(0) ?: return null
+        val albums = track.optJSONArray("albums") ?: JSONArray()
+        val uri = track.optString("coverUri").ifBlank {
+            if (albums.length() > 0) albums.optJSONObject(0)?.optString("coverUri").orEmpty() else ""
+        }.takeIf { it.isNotBlank() } ?: return null
+        val sized = uri.replace("%%", "400x400")
+        return if (sized.startsWith("https://")) sized else "https://$sized"
+    }
+
     private fun get(path: String, token: String, fields: Map<String, String> = emptyMap()) =
         transport.execute(YandexHttpRequest("api.music.yandex.net", path, fields = fields, token = token))
 }
+
