@@ -2,6 +2,7 @@ package com.crowplayer.companion
 
 import android.app.Notification
 import android.content.ComponentName
+import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.Rating
 import android.media.session.MediaController
