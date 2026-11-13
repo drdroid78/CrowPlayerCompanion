@@ -16,8 +16,21 @@ static void disc(int x,int y,int r,uint32_t c){auto*o=lv_obj_create(root);lv_obj
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
   auto*a=lv_arc_create(root);lv_obj_remove_style_all(a);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);lv_arc_set_bg_angles(a,start,end);lv_obj_set_style_arc_width(a,width,LV_PART_MAIN);lv_obj_set_style_arc_color(a,col(c),LV_PART_MAIN);lv_obj_set_style_arc_rounded(a,true,LV_PART_MAIN);lv_obj_set_style_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);lv_obj_remove_flag(a,LV_OBJ_FLAG_CLICKABLE);
 }
-static lv_point_precise_t iconLines[96][2];static uint8_t iconLineCount=0;
-static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){if(iconLineCount>=96)return;auto&pts=iconLines[iconLineCount++];pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};auto*l=lv_line_create(root);lv_line_set_points(l,pts,2);lv_obj_set_style_line_color(l,col(color),0);lv_obj_set_style_line_width(l,width,0);lv_obj_set_style_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);}
+static lv_point_precise_t iconLines[192][2];static uint8_t iconLineCount=0;
+static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){if(iconLineCount>=192)return;auto&pts=iconLines[iconLineCount++];pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};auto*l=lv_line_create(root);lv_line_set_points(l,pts,2);lv_obj_set_style_line_color(l,col(color),0);lv_obj_set_style_line_width(l,width,0);lv_obj_set_style_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);}
+static void volumeScale(int percent,uint32_t color){
+  constexpr int count=52;constexpr float outer=96.0f;constexpr float start=162.0f;
+  const int marker=clamp((percent*(count-1)+50)/100,0,count-1);
+  for(int i=0;i<count;i++){
+    const float a=(start+360.0f*i/count)*0.01745329252f;
+    const int d=abs(i-marker);int len=(i%5==0)?6:4,width=2;uint32_t ink=(i%5==0)?0x3A414A:0x2D333B;
+    if(d>=1&&d<=3){len=8+(4-d)*2;ink=color;}
+    if(d==0){len=29;width=3;ink=0xC4F4FF;}
+    const int x1=120+lroundf(sinf(a)*outer),y1=120-lroundf(cosf(a)*outer);
+    const int x2=120+lroundf(sinf(a)*(outer-len)),y2=120-lroundf(cosf(a)*(outer-len));
+    line(x1,y1,x2,y2,ink,width);
+  }
+}
 static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(color),0);return o;}
 static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
   switch(source){
@@ -114,21 +127,20 @@ void render(const Model&m,uint32_t now){
   if(m.screen!=1&&m.screen!=4&&m.screen!=5)nav(m.screen);
   if(m.volumeOverlay){
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
-    ring(120,110,68,135,405,0x252830,4);
     char value[16];int current=m.volumeOverlaySub?m.ham.sub:m.ham.volume;
     if(m.settings.tabletVolume){
-      int span=std::max(1,int(m.volumeOverlayAmount)*270/10);
-      if(m.volumeOverlayDirection>0)ring(120,110,68,135,135+span,accent,5);
-      else ring(120,110,68,405-span,405,accent,5);
-      label(m.volumeOverlayDirection>0?"UP":"DOWN",38,85,164,&cp_font_16,0xF5F5F5);
-      label("ГРОМКОСТЬ",26,177,188,&cp_font_14,accent);
+      const int progress=clamp(50+m.volumeOverlayDirection*int(m.volumeOverlayAmount)*5,0,100);
+      volumeScale(progress,accent);label("VOLUME",60,77,120,&cp_font_14,0xB8CBD3);
+      label(m.volumeOverlayDirection>0?"UP":"DOWN",30,96,180,&cp_font_44,0xC4F4FF);
     }
     else if(ham&&current!=(m.volumeOverlaySub?-128:-1)){
       snprintf(value,sizeof value,"%d",current);
-      int progress=m.volumeOverlaySub?clamp(current+60,0,60)*270/60:clamp(current,0,66)*270/66;
-      ring(120,110,68,135,135+std::max(1,progress),accent,5);
-      label(value,38,85,164,&cp_font_44,0xF5F5F5);label(m.volumeOverlaySub?"САБВУФЕР":"ГРОМКОСТЬ",26,177,188,&cp_font_14,accent);
-    }else{strcpy(value,"--");label(value,38,85,164,&cp_font_44,0xF5F5F5);label(m.volumeOverlaySub?"САБВУФЕР":"ГРОМКОСТЬ",26,177,188,&cp_font_14,accent);}
+      const int progress=m.volumeOverlaySub?clamp(current+60,0,60)*100/60:clamp(current,0,60)*100/60;
+      volumeScale(progress,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);
+      label(value,30,94,180,&cp_font_44,0xC4F4FF);
+      if(!m.volumeOverlaySub)label("%",80,150,80,&cp_font_16,0xB8CBD3);
+    }else{volumeScale(0,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
   }
 }
 }
+
