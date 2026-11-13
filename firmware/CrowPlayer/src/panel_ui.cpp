@@ -18,18 +18,10 @@ static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
 }
 static lv_point_precise_t iconLines[192][2];static uint8_t iconLineCount=0;
 static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){if(iconLineCount>=192)return;auto&pts=iconLines[iconLineCount++];pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};auto*l=lv_line_create(root);lv_line_set_points(l,pts,2);lv_obj_set_style_line_color(l,col(color),0);lv_obj_set_style_line_width(l,width,0);lv_obj_set_style_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);}
-static void volumeScale(int marker,uint32_t color){
-  constexpr int count=52;constexpr float outer=96.0f;constexpr float start=162.0f;
-  marker=clamp(marker,0,count-1);
-  for(int i=0;i<count;i++){
-    const float a=(start+360.0f*i/count)*0.01745329252f;
-    const int raw=abs(i-marker),d=std::min(raw,count-raw);int len=(i%5==0)?6:4,width=2;uint32_t ink=(i%5==0)?0x3A414A:0x2D333B;
-    if(d>=1&&d<=3){len=8+(4-d)*2;ink=color;}
-    if(d==0){len=29;width=3;ink=0xC4F4FF;}
-    const int x1=120+lroundf(sinf(a)*outer),y1=120-lroundf(cosf(a)*outer);
-    const int x2=120+lroundf(sinf(a)*(outer-len)),y2=120-lroundf(cosf(a)*(outer-len));
-    line(x1,y1,x2,y2,ink,width);
-  }
+static void volumeRing(int percent,uint32_t color){
+  percent=clamp(percent,0,100);
+  ring(120,120,91,0,359,0x252C35,7);
+  if(percent>0)ring(120,120,91,270,270+std::max(2,percent*359/100),color,7);
 }
 static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(color),0);return o;}
 static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
@@ -53,8 +45,7 @@ static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,like
 static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
 static int wheelY(int offset){return 120+offset*41;}
 static int wheelIconX(int offset){const int y=offset*41;return int(lroundf(125.0f-sqrtf(100.0f*100.0f-float(y*y))));}
-static uint32_t settingIconColor(int key){static const uint32_t colors[]={0xD99350,0x1F5FA8,0xDFBD4A,0x6F80B6,0x4BA82E,0x476C3C,0x9C70C3,0x1F5FA8};return colors[key%8];}
-static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=settingIconColor(key);disc(x,y,selected?11:9,bg);uint32_t ink=0xF5F5F5;
+static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=selected?0x102A38:0x11151B;uint32_t ink=selected?accent:0x858D97;disc(x,y,selected?12:10,bg);outlineCircle(x,y,selected?25:21,selected?accent:0x3C434D);
   if(key==0||key==1||key==6){outlineCircle(x,y,12,ink);line(x,y,x,y-4,ink,1);line(x,y,x+4,y+2,ink,1);}
   else if(key==2||key==4){disc(x,y,3,ink);line(x,y-8,x,y-5,ink,1);line(x,y+5,x,y+8,ink,1);line(x-8,y,x-5,y,ink,1);line(x+5,y,x+8,y,ink,1);line(x-6,y-6,x-4,y-4,ink,1);line(x+4,y+4,x+6,y+6,ink,1);}
   else if(key==3){disc(x-2,y-1,6,ink);disc(x+2,y-4,6,bg);}
@@ -100,7 +91,7 @@ void render(const Model&m,uint32_t now){
       label(name,x-w/2,y-7,w,&cp_font_14,active?0x050609:0xF5F5F5);
     }
   }else if(m.screen==4){
-    static const char* names[]={"Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран","Громкость"};
+    static const char* names[]={"Начало дня","Начало ночи","Яркость дня","Яркость ночи","LED днём","LED ночью","Ожидание","Громкость"};
     label("НАСТРОЙКИ",40,15,160,&cp_font_14,0xA5A9AF);
     for(int offset=-2;offset<=2;offset++){
       int key=(m.setting+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
@@ -125,18 +116,18 @@ void render(const Model&m,uint32_t now){
   if(m.screen!=1&&m.screen!=4&&m.screen!=5)nav(m.screen);
   if(m.volumeOverlay){
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
-    ring(120,120,101,0,359,0x1C2832,1);
     char value[16];int current=m.volumeOverlayValue;
+    volumeRing(m.volumeOverlayTick*100/51,accent);
     if(m.settings.tabletVolume){
-      volumeScale(m.volumeOverlayTick,accent);label("VOLUME",60,77,120,&cp_font_14,0xB8CBD3);
+      label("VOLUME",60,77,120,&cp_font_14,0xB8CBD3);
       label(m.volumeOverlayDirection>0?"UP":"DOWN",30,96,180,&cp_font_44,0xC4F4FF);
     }
     else if(current>=(m.volumeOverlaySub?-60:0)){
       snprintf(value,sizeof value,"%d",current);
-      volumeScale(m.volumeOverlayTick,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);
+      label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);
       label(value,30,94,180,&cp_font_44,0xC4F4FF);
       if(!m.volumeOverlaySub)label("%",80,150,80,&cp_font_16,0xB8CBD3);
-    }else{volumeScale(m.volumeOverlayTick,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
+    }else{label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
   }
 }
 }

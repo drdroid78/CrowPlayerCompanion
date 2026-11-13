@@ -69,13 +69,14 @@ static void volume(int delta){
     const int units=sub?cp::clamp(int(model.volumeOverlayValue)+60,0,60):cp::clamp(int(model.volumeOverlayValue),0,60);
     model.volumeOverlayTick=tabletMode?26:(units*51+30)/60;
   }
-  model.volumeOverlayTick=cp::clamp(int(model.volumeOverlayTick)+delta,0,51);
+  model.volumeOverlayTick=cp::clamp(int(model.volumeOverlayTick)+delta*(tabletMode?3:1),0,51);
   if(tabletMode)model.volumeOverlayValue=-1;
   else if(sub)model.volumeOverlayValue=cp::clamp(int(model.volumeOverlayValue)+delta,-60,0);
   else model.volumeOverlayValue=cp::clamp(int(model.volumeOverlayValue)+delta,0,60);
   model.volumeOverlaySub=sub;model.volumeOverlay=true;
   if(model.settings.tabletVolume){
-    tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta,-30,30);
+    // Three short HID volume taps per detent make tablet adjustment responsive.
+    tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta*3,-60,60);
     model.volumeOverlay=true;model.volumeOverlaySub=false;model.volumeOverlayUntil=millis()+1300;dirty=true;return;
   }
   uint8_t cmd=sub?3:2;
@@ -97,7 +98,7 @@ static void rotate(int delta){activity();if(model.screen==3){int count=cp::sourc
 static void tabletVolumeTick(uint32_t now){
   if(int32_t(now-tabletVolumeNextAt)<0)return;
   if(tabletVolumeKeyDown){
-    if(consumerControl.release()){tabletVolumeKeyDown=false;tabletVolumeNextAt=now+12;}
+    if(consumerControl.release()){tabletVolumeKeyDown=false;tabletVolumeNextAt=now+6;}
     else tabletVolumeNextAt=now+20;
     return;
   }
@@ -105,7 +106,7 @@ static void tabletVolumeTick(uint32_t now){
   const bool up=tabletVolumeQueued>0;
   tabletVolumeQueued+=up?-1:1;
   tabletVolumeKey=up?CONSUMER_CONTROL_VOLUME_INCREMENT:CONSUMER_CONTROL_VOLUME_DECREMENT;
-  if(consumerControl.press(tabletVolumeKey)){tabletVolumeKeyDown=true;tabletVolumeNextAt=now+35;}
+  if(consumerControl.press(tabletVolumeKey)){tabletVolumeKeyDown=true;tabletVolumeNextAt=now+10;}
   else{tabletVolumeQueued=0;notify("HID громкости недоступен",true);tabletVolumeNextAt=now+100;}
 }
 static void tap(int x,int y){
