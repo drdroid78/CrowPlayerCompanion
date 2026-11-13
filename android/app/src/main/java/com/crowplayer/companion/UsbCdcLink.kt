@@ -43,29 +43,54 @@ class UsbCdcLink(
     @Volatile private var output: UsbEndpoint? = null
     @Volatile private var running = false
     private var reader: Thread? = null
-    private var connectedDeviceId = -1
+    @Volatile private var connectedDeviceId = -1
+    @Volatile private var permissionPendingDeviceId = -1
+    @Volatile private var permissionDeniedDeviceId = -1
     private var registered = false
     @Volatile private var started = false
     private var lastStateAt = 0L
     @Volatile private var lastArtworkRevision = Long.MIN_VALUE
     @Volatile private var queuedArtworkRevision = Long.MIN_VALUE
     private var lastStatus = ""
+    private val reconnectTask = object : Runnable {
+        override fun run() {
+            if (!started) return
+            if (connection != null && !isConnectedDeviceListed()) disconnect("CrowPanel переподключается")
+            if (connection == null) discover()
+            mainHandler.postDelayed(this, 2000L)
+        }
+    }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             when (intent.action) {
                 ACTION_PERMISSION -> {
                     val device = intent.usbDeviceExtra() ?: return
+                    if (permissionPendingDeviceId == device.deviceId) permissionPendingDeviceId = -1
                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) connect(device)
-                    else report("Разреши CrowPlayer доступ к USB-панели")
+                    else {
+                        permissionDeniedDeviceId = device.deviceId
+                        report("Разреши CrowPlayer доступ к USB-панели")
+                    }
                 }
-                UsbManager.ACTION_USB_DEVICE_ATTACHED -> discover()
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    permissionDeniedDeviceId = -1
+                    if (connection != null && !isConnectedDeviceListed()) disconnect("CrowPanel переподключается")
+                    discover()
+                }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                     val device = intent.usbDeviceExtra()
-                    if (device == null || device.deviceId == connectedDeviceId) {
+                    val matchesConnected = device == null || device.deviceId == connectedDeviceId
+                    val matchesPendingPermission = device == null || device.deviceId == permissionPendingDeviceId
+                    val activeDeviceMissing = connection != null && !isConnectedDeviceListed()
+                    if (connection != null && (matchesConnected || activeDeviceMissing)) {
                         disconnect("CrowPanel отключена")
-                        scheduleReconnect()
                     }
+                    if (matchesConnected || matchesPendingPermission || activeDeviceMissing) {
+                        permissionPendingDeviceId = -1
+                        permissionDeniedDeviceId = -1
+                    }
+                    scheduleReconnect()
                 }
             }
         }
@@ -95,18 +120,28 @@ class UsbCdcLink(
             }
             registered = true
         }
+        permissionDeniedDeviceId = -1
         discover()
+        scheduleReconnect(1500L)
     }
 
     private fun discover() {
-        if (connection != null) return
+        if (connection != null) {
+            if (isConnectedDeviceListed()) return
+            disconnect("CrowPanel переподключается")
+        }
         val candidate = manager.deviceList.values.firstOrNull { cdcInterfaces(it) != null }
         if (candidate == null) {
             report("Подключи CrowPanel к USB OTG планшета")
             return
         }
-        if (manager.hasPermission(candidate)) connect(candidate) else {
+        if (manager.hasPermission(candidate)) {
+            permissionPendingDeviceId = -1
+            permissionDeniedDeviceId = -1
+            connect(candidate)
+        } else if (permissionPendingDeviceId != candidate.deviceId && permissionDeniedDeviceId != candidate.deviceId) {
             report("Запрашиваем разрешение USB для CrowPanel…")
+            permissionPendingDeviceId = candidate.deviceId
             val pending = PendingIntent.getBroadcast(
                 context,
                 candidate.deviceId,
@@ -115,6 +150,12 @@ class UsbCdcLink(
             )
             manager.requestPermission(candidate, pending)
         }
+    }
+
+    private fun isConnectedDeviceListed(): Boolean {
+        val id = connectedDeviceId
+        if (id < 0) return false
+        return try { manager.deviceList.values.any { it.deviceId == id } } catch (_: Exception) { false }
     }
 
     private data class CdcInterfaces(val control: UsbInterface, val data: UsbInterface, val input: UsbEndpoint, val output: UsbEndpoint)
@@ -169,6 +210,8 @@ class UsbCdcLink(
             connection = conn
             output = interfaces.output
             connectedDeviceId = device.deviceId
+            permissionPendingDeviceId = -1
+            permissionDeniedDeviceId = -1
             lastStateAt = 0L
             // A newly connected panel has no cached cover, even if Android does.
             lastArtworkRevision = Long.MIN_VALUE
@@ -228,8 +271,13 @@ class UsbCdcLink(
     }
 
     private fun scheduleReconnect() {
+        scheduleReconnect(1000L)
+    }
+
+    private fun scheduleReconnect(delayMs: Long) {
         if (!started) return
-        mainHandler.postDelayed({ if (started && connection == null) discover() }, 1000L)
+        mainHandler.removeCallbacks(reconnectTask)
+        mainHandler.postDelayed(reconnectTask, delayMs)
     }
 
     @Synchronized
@@ -370,6 +418,7 @@ class UsbCdcLink(
             connection = null
             output = null
             connectedDeviceId = -1
+            permissionPendingDeviceId = -1
             lastStateAt = 0L
             try { old?.close() } catch (_: Exception) {}
         }

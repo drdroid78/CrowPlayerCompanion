@@ -66,3 +66,4 @@ internal object ArtworkLoader {
 
     private const val MAX_ARTWORK_BYTES = 8 * 1024 * 1024
 }
+
