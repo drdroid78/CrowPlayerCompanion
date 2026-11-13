@@ -61,12 +61,25 @@ static void setHam(uint8_t cmd,int value){
 }
 static void volume(int delta){
   model.volumeOverlayDirection=delta>0?1:-1;model.volumeOverlayAmount=cp::clamp(abs(delta),1,10);
+  const bool tabletMode=model.settings.tabletVolume;
+  const bool sub=!tabletMode&&model.subSelected&&model.screen==2;
+  if(!model.volumeOverlay||model.volumeOverlaySub!=sub){
+    const int current=sub?model.ham.sub:model.ham.volume;
+    model.volumeOverlayValue=tabletMode?-1:(sub?(current!=-128?current:0):(current>=0?current:0));
+    const int units=sub?cp::clamp(int(model.volumeOverlayValue)+60,0,60):cp::clamp(int(model.volumeOverlayValue),0,60);
+    model.volumeOverlayTick=tabletMode?26:(units*51+30)/60;
+  }
+  model.volumeOverlayTick=cp::clamp(int(model.volumeOverlayTick)+delta,0,51);
+  if(tabletMode)model.volumeOverlayValue=-1;
+  else if(sub)model.volumeOverlayValue=cp::clamp(int(model.volumeOverlayValue)+delta,-60,0);
+  else model.volumeOverlayValue=cp::clamp(int(model.volumeOverlayValue)+delta,0,60);
+  model.volumeOverlaySub=sub;model.volumeOverlay=true;
   if(model.settings.tabletVolume){
     tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta,-30,30);
     model.volumeOverlay=true;model.volumeOverlaySub=false;model.volumeOverlayUntil=millis()+1300;dirty=true;return;
   }
-  uint8_t cmd=model.subSelected&&model.screen==2?3:2;
-  model.volumeOverlay=true;model.volumeOverlaySub=cmd==3;model.volumeOverlayUntil=millis()+1800;dirty=true;
+  uint8_t cmd=sub?3:2;
+  model.volumeOverlayUntil=millis()+1800;dirty=true;
   if(ampPending){if(ampCommand==cmd){queuedVolume=cp::clamp(queuedVolume+delta,-30,30);queuedVolumeCommand=cmd;}return;}
   if((cmd==2||cmd==3)&&uint32_t(millis()-lastVolumeSetAt)<100){if(!queuedVolume)queuedVolumeCommand=cmd;if(queuedVolumeCommand==cmd)queuedVolume=cp::clamp(queuedVolume+delta,-30,30);return;}
   if(cmd==3){if(model.ham.sub!=-128)setHam(3,model.ham.sub+delta);}else if(model.ham.volume>=0)setHam(2,model.ham.volume+delta);else notify("Ожидание громкости",true);
