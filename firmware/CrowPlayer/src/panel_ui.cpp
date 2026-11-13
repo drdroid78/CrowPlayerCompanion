@@ -20,8 +20,9 @@ static lv_point_precise_t iconLines[192][2];static uint8_t iconLineCount=0;
 static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){if(iconLineCount>=192)return;auto&pts=iconLines[iconLineCount++];pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};auto*l=lv_line_create(root);lv_line_set_points(l,pts,2);lv_obj_set_style_line_color(l,col(color),0);lv_obj_set_style_line_width(l,width,0);lv_obj_set_style_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);}
 static void volumeRing(int percent,uint32_t color){
   percent=clamp(percent,0,100);
-  ring(120,120,91,0,359,0x252C35,7);
-  if(percent>0)ring(120,120,91,270,270+std::max(2,percent*359/100),color,7);
+  constexpr int start=135,sweep=270,radius=104,width=7;
+  ring(120,120,radius,start,start+sweep,0x252C35,width);
+  if(percent>0)ring(120,120,radius,start,start+std::max(2,percent*sweep/100),color,width);
 }
 static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(color),0);return o;}
 static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
