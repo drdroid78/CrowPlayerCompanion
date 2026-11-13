@@ -25,6 +25,7 @@ static void volumeRing(int percent,uint32_t color){
   if(percent>0)ring(120,120,radius,start,start+std::max(2,percent*sweep/100),color,width);
 }
 static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(color),0);return o;}
+static void selectedRow(int y){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,14,y-18);lv_obj_set_size(o,212,36);lv_obj_set_style_radius(o,7,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);}
 static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
   switch(source){
     case 0: // OPT: horizontal optical plug and light rays
@@ -97,9 +98,10 @@ void render(const Model&m,uint32_t now){
     for(int offset=-2;offset<=2;offset++){
       int key=(m.setting+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:0x9399A2;
+      if(selected)selectedRow(y);
       settingIcon(key,iconX,y,selected);
       int valueWidth=key==7?(selected?76:34):40,valueX=224-valueWidth,labelX=iconX+19;
-      const lv_font_t* rowFont=selected&&key!=7?&cp_font_16:&cp_font_14;
+      const lv_font_t* rowFont=selected?&cp_font_18:&cp_font_16;
       leftLabel(names[key],labelX,y-(selected&&key!=7?8:7),valueX-labelX-3,rowFont,textColor);
       settingsText(m,key,b,sizeof b);
       label(b,valueX,y-7,valueWidth,&cp_font_14,selected?0xF5F5F5:0xAEB4BD);
@@ -109,9 +111,9 @@ void render(const Model&m,uint32_t now){
     for(int offset=-2;offset<=2;offset++){
       int index=(int(m.settings.theme)+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
-      disc(iconX,y,selected?12:9,themes[index].rgb);
-      leftLabel(themes[index].name,iconX+19,y-8,240-iconX-38,selected?&cp_font_16:&cp_font_14,textColor);
-      if(selected)disc(224,y,3,themes[index].rgb);
+      if(selected)selectedRow(y);
+      disc(iconX,y,selected?14:11,themes[index].rgb);
+      leftLabel(themes[index].name,iconX+19,y-9,240-iconX-38,selected?&cp_font_18:&cp_font_16,textColor);
     }
   }
   if(m.screen!=1&&m.screen!=4&&m.screen!=5)nav(m.screen);
