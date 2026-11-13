@@ -93,7 +93,7 @@ void render(const Model&m,uint32_t now){
       label(name,x-w/2,y-7,w,&cp_font_14,active?0x050609:0xF5F5F5);
     }
   }else if(m.screen==4){
-    static const char* names[]={"День с","Ночь с","Экран днём","Экран ночью","LED днём","LED ночью","Ожидание","Громкость"};
+    static const char* names[]={"День с","Ночь с","Ярк. дня","Ярк. ночи","LED днём","LED ночью","Тайм-аут","Громкость"};
     label("НАСТРОЙКИ",40,15,160,&cp_font_14,0xA5A9AF);
     for(int offset=-2;offset<=2;offset++){
       int key=(m.setting+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
