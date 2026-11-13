@@ -8,4 +8,3 @@ address, size = (int(v, 16) for v in match.groups())
 assert address % 4 == 0, f'LVGL RGB565 buffer is misaligned: {address:#x}'
 assert size == 240 * 40 * 2, f'Unexpected buffer size: {size}'
 print(f'ESP32 display buffer alignment verified: {address:#x}, {size} bytes')
-
