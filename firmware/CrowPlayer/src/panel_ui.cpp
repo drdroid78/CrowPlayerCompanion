@@ -23,7 +23,7 @@ static void volumeScale(int percent,uint32_t color){
   const int marker=clamp((percent*(count-1)+50)/100,0,count-1);
   for(int i=0;i<count;i++){
     const float a=(start+360.0f*i/count)*0.01745329252f;
-    const int d=abs(i-marker);int len=(i%5==0)?6:4,width=2;uint32_t ink=(i%5==0)?0x3A414A:0x2D333B;
+    const int raw=abs(i-marker),d=std::min(raw,count-raw);int len=(i%5==0)?6:4,width=2;uint32_t ink=(i%5==0)?0x3A414A:0x2D333B;
     if(d>=1&&d<=3){len=8+(4-d)*2;ink=color;}
     if(d==0){len=29;width=3;ink=0xC4F4FF;}
     const int x1=120+lroundf(sinf(a)*outer),y1=120-lroundf(cosf(a)*outer);
@@ -51,8 +51,9 @@ static void nav(int screen){for(int i=0;i<6;i++)disc(95+i*10,224,i==screen?3:2,i
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,liked?accent:0xF5F5F5);}
 static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
-static int wheelInset(int offset){int d=offset<0?-offset:offset;return d==0?24:d==1?32:42;}
-static lv_obj_t* wheelHighlight(int offset,int y,uint32_t color,bool editing=false){int inset=wheelInset(offset);auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,inset,y);lv_obj_set_size(o,240-2*inset,32);lv_obj_set_style_radius(o,9,0);lv_obj_set_style_bg_color(o,col(0x15191F),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);lv_obj_set_style_border_width(o,editing?2:1,0);lv_obj_set_style_border_color(o,col(color),0);lv_obj_set_style_border_opa(o,LV_OPA_COVER,0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE);return o;}
+static int wheelY(int offset){return 120+offset*33;}
+static int wheelIconX(int offset){int d=offset<0?-offset:offset;return 42+d*9;}
+static lv_obj_t* wheelHighlight(int offset,int y,uint32_t color,bool editing=false){int x=wheelIconX(offset)-14;auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x,y-15);lv_obj_set_size(o,240-x-14,30);lv_obj_set_style_radius(o,9,0);lv_obj_set_style_bg_color(o,col(0x15191F),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);lv_obj_set_style_border_width(o,editing?2:1,0);lv_obj_set_style_border_color(o,col(color),0);lv_obj_set_style_border_opa(o,LV_OPA_COVER,0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE);return o;}
 static uint32_t settingIconColor(int key){static const uint32_t colors[]={0xD99350,0x1F5FA8,0xDFBD4A,0x6F80B6,0x4BA82E,0x476C3C,0x9C70C3,0x1F5FA8};return colors[key%8];}
 static void settingIcon(int key,int x,int y){uint32_t bg=settingIconColor(key);disc(x,y,10,bg);uint32_t ink=0xF5F5F5;
   if(key==0||key==1||key==6){outlineCircle(x,y,12,ink);line(x,y,x,y-4,ink,1);line(x,y,x+4,y+2,ink,1);}
@@ -103,25 +104,25 @@ void render(const Model&m,uint32_t now){
     static const char* names[]={"Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран","Громкость"};
     label("НАСТРОЙКИ",40,15,160,&cp_font_14,0xA5A9AF);
     for(int offset=-2;offset<=2;offset++){
-      int key=(m.setting+offset+8)%8,y=35+(offset+2)*35,inset=wheelInset(offset),width=240-2*inset;
+      int key=(m.setting+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:0x9399A2;
       if(selected)wheelHighlight(offset,y,accent,m.edit);
-      settingIcon(key,inset+14,y+16);
-      int valueWidth=key==7?(selected?76:34):40,valueX=inset+width-valueWidth-6,labelX=inset+29;
+      settingIcon(key,iconX,y);
+      int valueWidth=key==7?(selected?76:34):40,valueX=224-valueWidth,labelX=iconX+17;
       const lv_font_t* rowFont=selected&&key!=7?&cp_font_16:&cp_font_14;
-      leftLabel(names[key],labelX,y+(selected&&key!=7?6:8),valueX-labelX-3,rowFont,textColor);
+      leftLabel(names[key],labelX,y-(selected&&key!=7?8:7),valueX-labelX-3,rowFont,textColor);
       settingsText(m,key,b,sizeof b);
-      label(b,valueX,y+8,valueWidth,&cp_font_14,selected?0xF5F5F5:0xAEB4BD);
+      label(b,valueX,y-7,valueWidth,&cp_font_14,selected?0xF5F5F5:0xAEB4BD);
     }
   }else{
     label("ТЕМА",40,15,160,&cp_font_14,0xA5A9AF);
     for(int offset=-2;offset<=2;offset++){
-      int index=(int(m.settings.theme)+offset+8)%8,y=35+(offset+2)*35,inset=wheelInset(offset),width=240-2*inset;
+      int index=(int(m.settings.theme)+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
       if(selected)wheelHighlight(offset,y,themes[index].rgb);
-      disc(inset+14,y+16,10,themes[index].rgb);
-      leftLabel(themes[index].name,inset+31,y+7,width-42,selected?&cp_font_16:&cp_font_14,textColor);
-      if(selected)disc(240-inset-10,y+16,3,themes[index].rgb);
+      disc(iconX,y,10,themes[index].rgb);
+      leftLabel(themes[index].name,iconX+17,y-8,240-iconX-36,selected?&cp_font_16:&cp_font_14,textColor);
+      if(selected)disc(224,y,3,themes[index].rgb);
     }
   }
   if(m.screen!=1&&m.screen!=4&&m.screen!=5)nav(m.screen);
