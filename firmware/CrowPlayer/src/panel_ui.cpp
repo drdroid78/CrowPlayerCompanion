@@ -51,11 +51,10 @@ static void nav(int screen){for(int i=0;i<6;i++)disc(95+i*10,224,i==screen?3:2,i
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,liked?accent:0xF5F5F5);}
 static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
-static int wheelY(int offset){return 120+offset*33;}
-static int wheelIconX(int offset){const int y=offset*34;return int(lroundf(180.0f-sqrtf(140.0f*140.0f-float(y*y))));}
-static lv_obj_t* wheelHighlight(int offset,int y,uint32_t color,bool editing=false){int x=wheelIconX(offset)-14;auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x,y-15);lv_obj_set_size(o,240-x-14,30);lv_obj_set_style_radius(o,9,0);lv_obj_set_style_bg_color(o,col(0x15191F),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);lv_obj_set_style_border_width(o,editing?2:1,0);lv_obj_set_style_border_color(o,col(color),0);lv_obj_set_style_border_opa(o,LV_OPA_COVER,0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE);return o;}
+static int wheelY(int offset){return 120+offset*41;}
+static int wheelIconX(int offset){const int y=offset*41;return int(lroundf(125.0f-sqrtf(100.0f*100.0f-float(y*y))));}
 static uint32_t settingIconColor(int key){static const uint32_t colors[]={0xD99350,0x1F5FA8,0xDFBD4A,0x6F80B6,0x4BA82E,0x476C3C,0x9C70C3,0x1F5FA8};return colors[key%8];}
-static void settingIcon(int key,int x,int y){uint32_t bg=settingIconColor(key);disc(x,y,10,bg);uint32_t ink=0xF5F5F5;
+static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=settingIconColor(key);disc(x,y,selected?11:9,bg);uint32_t ink=0xF5F5F5;
   if(key==0||key==1||key==6){outlineCircle(x,y,12,ink);line(x,y,x,y-4,ink,1);line(x,y,x+4,y+2,ink,1);}
   else if(key==2||key==4){disc(x,y,3,ink);line(x,y-8,x,y-5,ink,1);line(x,y+5,x,y+8,ink,1);line(x-8,y,x-5,y,ink,1);line(x+5,y,x+8,y,ink,1);line(x-6,y-6,x-4,y-4,ink,1);line(x+4,y+4,x+6,y+6,ink,1);}
   else if(key==3){disc(x-2,y-1,6,ink);disc(x+2,y-4,6,bg);}
@@ -106,9 +105,8 @@ void render(const Model&m,uint32_t now){
     for(int offset=-2;offset<=2;offset++){
       int key=(m.setting+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:0x9399A2;
-      if(selected)wheelHighlight(offset,y,accent,m.edit);
-      settingIcon(key,iconX,y);
-      int valueWidth=key==7?(selected?76:34):40,valueX=224-valueWidth,labelX=iconX+17;
+      settingIcon(key,iconX,y,selected);
+      int valueWidth=key==7?(selected?76:34):40,valueX=224-valueWidth,labelX=iconX+19;
       const lv_font_t* rowFont=selected&&key!=7?&cp_font_16:&cp_font_14;
       leftLabel(names[key],labelX,y-(selected&&key!=7?8:7),valueX-labelX-3,rowFont,textColor);
       settingsText(m,key,b,sizeof b);
@@ -119,9 +117,8 @@ void render(const Model&m,uint32_t now){
     for(int offset=-2;offset<=2;offset++){
       int index=(int(m.settings.theme)+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
-      if(selected)wheelHighlight(offset,y,themes[index].rgb);
-      disc(iconX,y,10,themes[index].rgb);
-      leftLabel(themes[index].name,iconX+17,y-8,240-iconX-36,selected?&cp_font_16:&cp_font_14,textColor);
+      disc(iconX,y,selected?12:9,themes[index].rgb);
+      leftLabel(themes[index].name,iconX+19,y-8,240-iconX-38,selected?&cp_font_16:&cp_font_14,textColor);
       if(selected)disc(224,y,3,themes[index].rgb);
     }
   }
