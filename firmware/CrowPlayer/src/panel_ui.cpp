@@ -60,23 +60,20 @@ void render(const Model&m,uint32_t now){
     ring(177,104,33,135,405,0x292C33,2);if(ham&&m.ham.sub!=-128)snprintf(b,sizeof b,"%d",m.ham.sub);else strcpy(b,"--");label(b,147,91,60,&cp_font_16);label("САБ",148,148,58,&cp_font_14,m.subSelected?accent:0xA5A9AF);
     if(ham&&m.ham.mute>=0)label(m.ham.mute==1?"MUTE · ВКЛ":"MUTE · ВЫКЛ",40,182,160,&cp_font_16,m.ham.mute==1?accent:0xD0D2D5);
   }else if(m.screen==3){
-    // Restore the earlier radial selector. The center reports the amplifier's
-    // active input while the encoder cursor highlights one of the five choices.
-    for(int i=0;i<5;i++){
-      const int source=sourceAt(i);int x,y;sourcePosition(i,x,y);
-      const bool selected=m.sourceSelection==source,active=m.ham.source==source;
-      auto*tile=lv_obj_create(root);lv_obj_remove_style_all(tile);lv_obj_set_pos(tile,x-26,y-26);lv_obj_set_size(tile,52,52);
-      lv_obj_set_style_radius(tile,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_color(tile,col(selected?0x111821:0x0B0D12),0);lv_obj_set_style_bg_opa(tile,LV_OPA_COVER,0);
-      lv_obj_set_style_border_width(tile,selected?2:(active?1:0),0);lv_obj_set_style_border_color(tile,col(accent),0);
-      const uint32_t iconColor=selected?accent:(ham?0xE0E2E5:0x858A92);
-      drawSourceIcon(source,x,y-7,iconColor);
-      const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?52:44;
-      label(name,x-w/2,y+7,w,&cp_font_14,selected?accent:(ham?0xD0D2D5:0x858A92));
-      if(active)disc(x+19,y-19,2,accent);
+    // Original radial selector: the amplifier's advertised order determines
+    // clockwise positions; the center always shows the active input.
+    label("ИСТОЧНИК",55,27,130,&cp_font_14,0xA5A9AF);
+    disc(120,118,32,0x101218);ring(120,118,35,0,359,ham&&m.ham.source>=0?accent:0x41454D,2);
+    label(ham&&m.ham.source>=0?sourceName(m.ham.source):"--",90,109,60,&cp_font_16);
+    const int count=sourceCount(m.ham);
+    for(int i=0;i<count;i++){
+      const int source=sourceAt(m.ham,i);int x,y;sourcePosition(i,count,x,y);
+      const bool active=ham&&source==m.ham.source,selected=source==m.sourceSelection;
+      disc(x,y,21,active?accent:0x22252C);
+      if(selected&&!active)ring(x,y,24,0,359,accent,2);
+      const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?46:42;
+      label(name,x-w/2,y-7,w,&cp_font_14,active?0x050609:0xF5F5F5);
     }
-    disc(120,118,32,0x101218);ring(120,118,35,0,359,m.ham.source>=0?accent:0x41454D,2);
-    label(m.ham.source>=0?sourceName(m.ham.source):"--",75,105,90,&cp_font_16,0xF5F5F5);
-    if(m.ham.source>=0)label("АКТИВЕН",82,126,76,&cp_font_14,accent);
   }else if(m.screen==4){
     static const char* names[]={"Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
     label("НАСТРОЙКИ",40,27,160,&cp_font_14,0xA5A9AF);
