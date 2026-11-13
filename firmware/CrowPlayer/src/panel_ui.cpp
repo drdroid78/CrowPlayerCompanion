@@ -51,8 +51,8 @@ void render(const Model&m,uint32_t now){
     uint32_t pos=m.position;if(m.playing&&m.usb)pos+=now-m.positionAt;pos=std::min(pos,m.duration);
     label(m.title,18,139,204,&cp_font_16);
     label(m.artist,24,159,192,&cp_font_14,0xA5A9AF);
-    char p[12],d[12];timeText(p,pos);timeText(d,m.duration);label(p,16,182,40,&cp_font_14,0xF5F5F5);label(d,184,182,40,&cp_font_14,0xF5F5F5);
-    line(60,191,180,191,0x303743,3);if(m.duration)line(60,191,60+int(uint64_t(pos)*120/m.duration),191,accent,3);
+    char p[12],d[12];timeText(p,pos);timeText(d,m.duration);label(p,22,182,40,&cp_font_14,0xF5F5F5);label(d,178,182,40,&cp_font_14,0xF5F5F5);
+    line(65,191,175,191,0x303743,3);if(m.duration)line(65,191,65+int(uint64_t(pos)*110/m.duration),191,accent,3);
     if(m.playing){line(116,210,116,224,0xF5F5F5,3);line(124,210,124,224,0xF5F5F5,3);}else{line(116,210,126,217,0xF5F5F5,3);line(126,217,116,224,0xF5F5F5,3);line(116,224,116,210,0xF5F5F5,3);}
   }else if(m.screen==2){
     label("ЗВУК",60,28,120,&cp_font_14,0xA5A9AF);ring(82,104,53,135,405,0x292C33,3);if(ham&&m.ham.volume>=0)ring(82,104,53,135,135+std::max(1,m.ham.volume*270/66),accent,4);
@@ -60,11 +60,17 @@ void render(const Model&m,uint32_t now){
     ring(177,104,33,135,405,0x292C33,2);if(ham&&m.ham.sub!=-128)snprintf(b,sizeof b,"%d",m.ham.sub);else strcpy(b,"--");label(b,147,91,60,&cp_font_16);label("САБ",148,148,58,&cp_font_14,m.subSelected?accent:0xA5A9AF);
     if(ham&&m.ham.mute>=0)label(m.ham.mute==1?"MUTE · ВКЛ":"MUTE · ВЫКЛ",40,182,160,&cp_font_16,m.ham.mute==1?accent:0xD0D2D5);
   }else if(m.screen==3){
-    for(int i=0;ham&&i<m.ham.count&&i<5;i++){
-      int x,y;sourcePosition(i,x,y);bool active=m.ham.sources[i]==m.ham.source;
+    // Show the five verified HAM8.100DSP inputs immediately, including while
+    // the amplifier is starting or temporarily offline.
+    static constexpr uint8_t fallbackSources[]={0,4,5,2,6};
+    const bool haveSourceList=ham&&m.ham.count>0;
+    const int count=haveSourceList?std::min<int>(m.ham.count,5):5;
+    for(int i=0;i<count;i++){
+      int x,y;sourcePosition(i,x,y);int source=haveSourceList?m.ham.sources[i]:fallbackSources[i];bool active=m.ham.source>=0&&source==m.ham.source;
       if(active){auto*tile=lv_obj_create(root);lv_obj_remove_style_all(tile);lv_obj_set_pos(tile,x-28,y-32);lv_obj_set_size(tile,56,66);lv_obj_set_style_radius(tile,10,0);lv_obj_set_style_bg_color(tile,col(0x11151B),0);lv_obj_set_style_bg_opa(tile,LV_OPA_COVER,0);lv_obj_set_style_border_width(tile,1,0);lv_obj_set_style_border_color(tile,col(accent),0);}
-      drawSourceIcon(m.ham.sources[i],x,y-9,active?accent:0xF5F5F5);
-      const char*name=sourceName(m.ham.sources[i]);int w=!strcmp(name,"AUX IN")?70:54;label(name,x-w/2,y+12,w,&cp_font_14,active?accent:0xD0D2D5);
+      uint32_t iconColor=active?accent:(ham?0xF5F5F5:0x858A92);
+      drawSourceIcon(source,x,y-9,iconColor);
+      const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?70:54;label(name,x-w/2,y+12,w,&cp_font_14,active?accent:(ham?0xD0D2D5:0x858A92));
     }
   }else if(m.screen==4){
     static const char* names[]={"Темы оформления","Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
