@@ -18,9 +18,9 @@ static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
 }
 static lv_point_precise_t iconLines[192][2];static uint8_t iconLineCount=0;
 static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){if(iconLineCount>=192)return;auto&pts=iconLines[iconLineCount++];pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};auto*l=lv_line_create(root);lv_line_set_points(l,pts,2);lv_obj_set_style_line_color(l,col(color),0);lv_obj_set_style_line_width(l,width,0);lv_obj_set_style_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);}
-static void volumeScale(int percent,uint32_t color){
+static void volumeScale(int marker,uint32_t color){
   constexpr int count=52;constexpr float outer=96.0f;constexpr float start=162.0f;
-  const int marker=clamp((percent*(count-1)+50)/100,0,count-1);
+  marker=clamp(marker,0,count-1);
   for(int i=0;i<count;i++){
     const float a=(start+360.0f*i/count)*0.01745329252f;
     const int raw=abs(i-marker),d=std::min(raw,count-raw);int len=(i%5==0)?6:4,width=2;uint32_t ink=(i%5==0)?0x3A414A:0x2D333B;
@@ -129,19 +129,17 @@ void render(const Model&m,uint32_t now){
   if(m.volumeOverlay){
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
     ring(120,120,101,0,359,0x1C2832,1);
-    char value[16];int current=m.volumeOverlaySub?m.ham.sub:m.ham.volume;
+    char value[16];int current=m.volumeOverlayValue;
     if(m.settings.tabletVolume){
-      const int progress=clamp(50+m.volumeOverlayDirection*int(m.volumeOverlayAmount)*5,0,100);
-      volumeScale(progress,accent);label("VOLUME",60,77,120,&cp_font_14,0xB8CBD3);
+      volumeScale(m.volumeOverlayTick,accent);label("VOLUME",60,77,120,&cp_font_14,0xB8CBD3);
       label(m.volumeOverlayDirection>0?"UP":"DOWN",30,96,180,&cp_font_44,0xC4F4FF);
     }
-    else if(ham&&current!=(m.volumeOverlaySub?-128:-1)){
+    else if(current>=(m.volumeOverlaySub?-60:0)){
       snprintf(value,sizeof value,"%d",current);
-      const int progress=m.volumeOverlaySub?clamp(current+60,0,60)*100/60:clamp(current,0,60)*100/60;
-      volumeScale(progress,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);
+      volumeScale(m.volumeOverlayTick,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);
       label(value,30,94,180,&cp_font_44,0xC4F4FF);
       if(!m.volumeOverlaySub)label("%",80,150,80,&cp_font_16,0xB8CBD3);
-    }else{volumeScale(0,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
+    }else{volumeScale(m.volumeOverlayTick,accent);label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
   }
 }
 }
