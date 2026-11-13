@@ -9,6 +9,9 @@ static void cover(const Model&m){if(!m.artworkPresent)return;coverImage={};cover
 static lv_obj_t* label(const char*s,int x,int y,int w,const lv_font_t*f=&cp_font_14,uint32_t c=0xF5F5F5){
   auto*l=lv_label_create(root);lv_obj_set_size(l,w,f->line_height);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
 }
+static lv_obj_t* leftLabel(const char*s,int x,int y,int w,const lv_font_t*f,uint32_t c){
+  auto*l=lv_label_create(root);lv_obj_set_size(l,w,f->line_height);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_LEFT,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
+}
 static void disc(int x,int y,int r,uint32_t c){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-r,y-r);lv_obj_set_size(o,2*r,2*r);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_color(o,col(c),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);}
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
   auto*a=lv_arc_create(root);lv_obj_remove_style_all(a);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);lv_arc_set_bg_angles(a,start,end);lv_obj_set_style_arc_width(a,width,LV_PART_MAIN);lv_obj_set_style_arc_color(a,col(c),LV_PART_MAIN);lv_obj_set_style_arc_rounded(a,true,LV_PART_MAIN);lv_obj_set_style_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);lv_obj_remove_flag(a,LV_OBJ_FLAG_CLICKABLE);
@@ -34,13 +37,23 @@ static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
 static void nav(int screen){for(int i=0;i<6;i++)disc(95+i*10,224,i==screen?3:2,i==screen?accent:0x464950);}
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,liked?accent:0xF5F5F5);}
-static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;}}
+static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
+static int wheelInset(int offset){int d=offset<0?-offset:offset;return d==0?24:d==1?32:42;}
+static lv_obj_t* wheelHighlight(int offset,int y,uint32_t color,bool editing=false){int inset=wheelInset(offset);auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,inset,y);lv_obj_set_size(o,240-2*inset,32);lv_obj_set_style_radius(o,9,0);lv_obj_set_style_bg_color(o,col(0x15191F),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);lv_obj_set_style_border_width(o,editing?2:1,0);lv_obj_set_style_border_color(o,col(color),0);lv_obj_set_style_border_opa(o,LV_OPA_COVER,0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE);return o;}
+static uint32_t settingIconColor(int key){static const uint32_t colors[]={0xD99350,0x1F5FA8,0xDFBD4A,0x6F80B6,0x4BA82E,0x476C3C,0x9C70C3,0x1F5FA8};return colors[key%8];}
+static void settingIcon(int key,int x,int y){uint32_t bg=settingIconColor(key);disc(x,y,10,bg);uint32_t ink=0xF5F5F5;
+  if(key==0||key==1||key==6){outlineCircle(x,y,12,ink);line(x,y,x,y-4,ink,1);line(x,y,x+4,y+2,ink,1);}
+  else if(key==2||key==4){disc(x,y,3,ink);line(x,y-8,x,y-5,ink,1);line(x,y+5,x,y+8,ink,1);line(x-8,y,x-5,y,ink,1);line(x+5,y,x+8,y,ink,1);line(x-6,y-6,x-4,y-4,ink,1);line(x+4,y+4,x+6,y+6,ink,1);}
+  else if(key==3){disc(x-2,y-1,6,ink);disc(x+2,y-4,6,bg);}
+  else if(key==7){line(x-5,y-1,x+5,y-1,ink,1);line(x-5,y+3,x+5,y+3,ink,1);line(x-3,y-5,x+3,y-5,ink,1);line(x-3,y-5,x-3,y-2,ink,1);line(x+3,y-5,x+3,y-2,ink,1);}
+  else{disc(x,y,4,ink);}
+}
 void render(const Model&m,uint32_t now){
   if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);lv_obj_set_style_bg_color(root,col(0x050609),0);lv_obj_set_style_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lv_obj_clean(root);iconLineCount=0;accent=themes[m.settings.theme].rgb;
   char b[160];bool ham=m.ham.online(now);
   if(m.screen==0){
     ring(120,120,103,135,405,0x252830,3);int minute=m.clock.minute();if(m.clock.epoch)ring(120,120,103,135,135+std::max(1,minute*270/1440),accent,4);
-    label("ŠKODA EDITION",40,53,160,&cp_font_14,0xA5A9AF);m.clock.text(b);label(b,20,91,200,&cp_font_44);
+    m.clock.text(b);label(b,20,91,200,&cp_font_44);
     if(m.usb)label("USB",40,170,160,&cp_font_14,accent);
   }else if(m.screen==1){
     cover(m);
@@ -74,28 +87,42 @@ void render(const Model&m,uint32_t now){
       label(name,x-w/2,y-7,w,&cp_font_14,active?0x050609:0xF5F5F5);
     }
   }else if(m.screen==4){
-    static const char* names[]={"Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
-    label("НАСТРОЙКИ",40,27,160,&cp_font_14,0xA5A9AF);
-    for(int row=-1;row<=1;row++){int key=(m.setting+row+7)%7;int y=63+(row+1)*43;bool selected=!row;if(selected){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,30,y-3);lv_obj_set_size(o,180,42);lv_obj_set_style_radius(o,10,0);lv_obj_set_style_bg_color(o,col(0x1B1F26),0);lv_obj_set_style_bg_opa(o,255,0);}label(names[key],35,y,170,&cp_font_14,selected?accent:0xA5A9AF);settingsText(m,key,b,sizeof b);label(b,33,y+17,174,&cp_font_14,selected?0xF5F5F5:0xA5A9AF);}
-    label(m.edit?"Поворот · изменить":"Касание · изменить",30,198,180,&cp_font_14,m.edit?accent:0xA5A9AF);
+    static const char* names[]={"Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран","Громкость"};
+    label("НАСТРОЙКИ",40,15,160,&cp_font_14,0xA5A9AF);
+    for(int offset=-2;offset<=2;offset++){
+      int key=(m.setting+offset+8)%8,y=35+(offset+2)*35,inset=wheelInset(offset),width=240-2*inset;
+      bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:0x9399A2;
+      if(selected)wheelHighlight(offset,y,accent,m.edit);
+      settingIcon(key,inset+14,y+16);
+      int valueWidth=key==7?(selected?76:34):40,valueX=inset+width-valueWidth-6,labelX=inset+29;
+      const lv_font_t* rowFont=selected&&key!=7?&cp_font_16:&cp_font_14;
+      leftLabel(names[key],labelX,y+(selected&&key!=7?6:8),valueX-labelX-3,rowFont,textColor);
+      settingsText(m,key,b,sizeof b);
+      label(b,valueX,y+8,valueWidth,&cp_font_14,selected?0xF5F5F5:0xAEB4BD);
+    }
   }else{
-    static const char* shortNames[]={"Tornado","Lapiz","Reflex","Indium","Urano","Atlantic","Pure","Škoda"};
-    label("ТЕМА ОФОРМЛЕНИЯ",24,22,192,&cp_font_14,0xA5A9AF);
-    for(int i=0;i<8;i++){int x=25+(i%2)*98,y=51+(i/2)*31;bool selected=m.settings.theme==i;auto*tile=lv_obj_create(root);lv_obj_remove_style_all(tile);lv_obj_set_pos(tile,x,y);lv_obj_set_size(tile,90,27);lv_obj_set_style_radius(tile,8,0);lv_obj_set_style_bg_color(tile,col(selected?0x20242C:0x101218),0);lv_obj_set_style_bg_opa(tile,LV_OPA_COVER,0);lv_obj_set_style_border_width(tile,selected?1:0,0);lv_obj_set_style_border_color(tile,col(themes[i].rgb),0);lv_obj_set_style_border_opa(tile,selected?LV_OPA_COVER:LV_OPA_TRANSP,0);disc(x+12,y+13,7,themes[i].rgb);label(shortNames[i],x+22,y+5,65,&cp_font_14,selected?0xF5F5F5:0xA5A9AF);}
-    label(themes[m.settings.theme].name,25,181,190,&cp_font_16,accent);snprintf(b,sizeof b,"#%06lX",(unsigned long)themes[m.settings.theme].rgb);label(b,25,198,190,&cp_font_14,0xA5A9AF);
+    label("ТЕМА",40,15,160,&cp_font_14,0xA5A9AF);
+    for(int offset=-2;offset<=2;offset++){
+      int index=(int(m.settings.theme)+offset+8)%8,y=35+(offset+2)*35,inset=wheelInset(offset),width=240-2*inset;
+      bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
+      if(selected)wheelHighlight(offset,y,themes[index].rgb);
+      disc(inset+14,y+16,10,themes[index].rgb);
+      leftLabel(themes[index].name,inset+31,y+7,width-42,selected?&cp_font_16:&cp_font_14,textColor);
+      if(selected)disc(240-inset-10,y+16,3,themes[index].rgb);
+    }
   }
-  if(m.screen!=1)nav(m.screen);
+  if(m.screen!=1&&m.screen!=4&&m.screen!=5)nav(m.screen);
   if(m.volumeOverlay){
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
     ring(120,110,68,135,405,0x252830,4);
     char value[16];int current=m.volumeOverlaySub?m.ham.sub:m.ham.volume;
-    if(ham&&current!=(m.volumeOverlaySub?-128:-1)){
+    if(m.settings.tabletVolume){strcpy(value,"HID");label(value,38,85,164,&cp_font_44,0xF5F5F5);label("ГРОМКОСТЬ · ПЛАНШЕТ",20,177,200,&cp_font_14,accent);}
+    else if(ham&&current!=(m.volumeOverlaySub?-128:-1)){
       snprintf(value,sizeof value,"%d",current);
       int progress=m.volumeOverlaySub?clamp(current+60,0,60)*270/60:clamp(current,0,66)*270/66;
       ring(120,110,68,135,135+std::max(1,progress),accent,5);
-    }else strcpy(value,"--");
-    label(value,38,85,164,&cp_font_44,0xF5F5F5);
-    label(m.volumeOverlaySub?"САБВУФЕР":"ГРОМКОСТЬ",26,177,188,&cp_font_14,accent);
+      label(value,38,85,164,&cp_font_44,0xF5F5F5);label(m.volumeOverlaySub?"САБВУФЕР":"ГРОМКОСТЬ",26,177,188,&cp_font_14,accent);
+    }else{strcpy(value,"--");label(value,38,85,164,&cp_font_44,0xF5F5F5);label(m.volumeOverlaySub?"САБВУФЕР":"ГРОМКОСТЬ",26,177,188,&cp_font_14,accent);}
   }
 }
 }

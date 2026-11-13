@@ -10,6 +10,7 @@ template<class T> T clamp(T v,T lo,T hi){return std::min(hi,std::max(lo,v));}
 struct Settings {
   uint8_t theme=7, dayHour=7, nightHour=22, dayLight=80, nightLight=18, dayLed=35, nightLed=6;
   uint16_t idleSeconds=30;
+  bool tabletVolume=false;
   bool valid() const {return theme<8 && dayHour<24 && nightHour<24 && dayLight<=100 && nightLight<=100 && dayLed<=100 && nightLed<=100 && idleSeconds<=600;}
 };
 struct Clock {

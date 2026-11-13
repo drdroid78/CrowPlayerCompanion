@@ -8,6 +8,7 @@
 #include <Wire.h>
 #include <USB.h>
 #include <USBCDC.h>
+#include <USBHIDConsumerControl.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include "crowplayer_secrets.h"
@@ -20,7 +21,7 @@ class CrowDisplay:public lgfx::LGFX_Device {
     auto l=light.config();l.pin_bl=46;l.invert=false;l.freq=12000;l.pwm_channel=7;light.config(l);panel.setLight(&light);setPanel(&panel);
   }
 };
-CrowDisplay lcd;USBCDC tablet;HardwareSerial amp(1);Preferences prefs;
+CrowDisplay lcd;USBCDC tablet;USBHIDConsumerControl consumerControl;HardwareSerial amp(1);Preferences prefs;
 Adafruit_NeoPixel leds(5,48,NEO_GRB+NEO_KHZ800);
 cp::Model model;cp::HamParser parser;cp::LineBuffer usbLine;cp::Button button;
 static portMUX_TYPE encoderMux=portMUX_INITIALIZER_UNLOCKED;
@@ -33,6 +34,8 @@ static int queuedVolume=0;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
 alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
 static const char* volatile bootStage="starting";
+struct LegacySettingsV1 {uint8_t theme,dayHour,nightHour,dayLight,nightLight,dayLed,nightLed;uint16_t idleSeconds;};
+static_assert(sizeof(LegacySettingsV1)==10,"Unexpected legacy settings layout");
 static volatile uint32_t flushCount=0,loopCount=0;
 static volatile bool displayOk=false;
 static volatile uint32_t hamBytes=0,hamReports=0;
@@ -56,6 +59,12 @@ static void setHam(uint8_t cmd,int value){
   ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
 }
 static void volume(int delta){
+  if(model.settings.tabletVolume){
+    if(!model.usb){notify("Отключён планшет",true);return;}
+    uint16_t key=delta>0?CONSUMER_CONTROL_VOLUME_INCREMENT:CONSUMER_CONTROL_VOLUME_DECREMENT;
+    for(int i=0;i<abs(delta);i++){consumerControl.press(key);consumerControl.release();delay(8);}
+    model.volumeOverlay=true;model.volumeOverlaySub=false;model.volumeOverlayUntil=millis()+1300;dirty=true;return;
+  }
   uint8_t cmd=model.subSelected&&model.screen==2?3:2;
   model.volumeOverlay=true;model.volumeOverlaySub=cmd==3;model.volumeOverlayUntil=millis()+1800;dirty=true;
   if(ampPending){if(ampCommand==cmd)queuedVolume=cp::clamp(queuedVolume+delta,-30,30);return;}
@@ -69,15 +78,21 @@ static void media(const char*action){
 }
 static int b64value(char c){if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;if(c=='+')return 62;if(c=='/')return 63;return -1;}
 static size_t decodeBase64(const char*src,uint8_t*out,size_t cap){uint32_t acc=0;int bits=0;size_t n=0;for(;*src;src++){int v=b64value(*src);if(v<0)break;acc=(acc<<6)|uint32_t(v);bits+=6;if(bits>=8){bits-=8;if(n>=cap)return 0;out[n++]=uint8_t(acc>>bits);}}return n;}
-static void editSetting(int delta){auto&s=model.settings;if(model.screen==5){s.theme=(s.theme+delta%8+8)%8;}else switch(model.setting){case 0:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 1:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 2:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 3:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 4:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 5:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 6:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;}saveLater();}
-static void rotate(int delta){activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%7+7)%7;dirty=true;}}else volume(delta);}
+static void editSetting(int delta){auto&s=model.settings;if(model.screen==5){s.theme=(s.theme+delta%8+8)%8;}else switch(model.setting){case 0:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 1:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 2:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 3:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 4:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 5:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 6:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;case 7:if(abs(delta)%2)s.tabletVolume=!s.tabletVolume;break;}saveLater();}
+static void rotate(int delta){activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting+delta%8+8)%8;dirty=true;}}else volume(delta);}
 static void tap(int x,int y){
   if(model.screen==0){activity();return;}activity();
   if(model.screen==1){if(x>=170&&y<64)media("like");else if(y>=202)media("play_pause");}
   else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
   else if(model.screen==3){int count=cp::sourceCount(model.ham);for(int i=0;i<count;i++){int sx,sy;cp::sourcePosition(i,count,sx,sy);if(abs(x-sx)<23&&abs(y-sy)<23){model.sourceSelection=cp::sourceAt(model.ham,i);dirty=true;setHam(1,model.sourceSelection);break;}}}
-  else if(model.screen==4){if(y>=95&&y<145){model.edit=!model.edit;saveLater();}else{model.setting=(model.setting+(y<95?6:1))%7;model.edit=false;dirty=true;}}
-  else if(model.screen==5){int row=(y-44)/31;int col=x<120?0:1;if(y>=44&&row<4&&x>=24&&x<216){model.settings.theme=row*2+col;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}}
+  else if(model.screen==4||model.screen==5){
+    if(y>=35&&y<210){int row=(y-35)/35,offset=row-2,d=abs(offset),inset=d==0?24:d==1?32:42;
+      if(x>=inset&&x<240-inset){
+        if(model.screen==4){int selected=(model.setting+offset+8)%8;if(offset==0){model.edit=!model.edit;saveLater();}else{model.setting=selected;model.edit=false;}dirty=true;}
+        else{model.settings.theme=(model.settings.theme+offset+8)%8;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}
+      }
+    }
+  }
 }
 static bool readTouch(uint8_t reg,uint8_t*out,size_t n){Wire1.beginTransmission(0x15);Wire1.write(reg);if(Wire1.endTransmission(false)!=0)return false;if(Wire1.requestFrom(uint8_t(0x15),uint8_t(n))!=n)return false;for(size_t i=0;i<n;i++)out[i]=Wire1.read();return true;}
 static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uint32_t downAt){
@@ -86,7 +101,7 @@ static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uin
   // navigate predictably on the small round touch surface.
   if(abs(dx)>=24&&abs(dx)*10>=abs(dy)*11){model.screen=1+((model.screen-1+(dx<0?1:4))%5);if(model.screen==3)model.sourceSelection=model.ham.source>=0?model.ham.source:cp::sourceAt(model.ham,0);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
   else{
-    if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:6))%7;dirty=true;}else if(model.screen==5){editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
+    if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
     else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
   }
 }
@@ -144,11 +159,13 @@ static void lighting(uint32_t now){
 }
 void setup(){
   pinMode(1,OUTPUT);digitalWrite(1,HIGH);pinMode(2,OUTPUT);digitalWrite(2,HIGH);pinMode(40,OUTPUT);digitalWrite(40,LOW);
-  tablet.begin(115200);USB.productName("CrowPanel Skoda Edition");USB.begin();
+  tablet.begin(115200);consumerControl.begin();USB.productName("CrowPanel Skoda Edition");USB.begin();
   xTaskCreate(bootMonitor,"boot-monitor",3072,nullptr,1,nullptr);
   bootStage="encoder";
   pinMode(45,INPUT_PULLUP);pinMode(42,INPUT_PULLUP);pinMode(41,INPUT_PULLUP);encoderPrevious=(digitalRead(45)<<1)|digitalRead(42);attachInterrupt(45,onEncoder,CHANGE);attachInterrupt(42,onEncoder,CHANGE);
-  bootStage="preferences";prefs.begin("crowpanel",false);if(prefs.getUChar("version",0)==1&&prefs.getBytesLength("settings")==sizeof(cp::Settings)){cp::Settings s;prefs.getBytes("settings",&s,sizeof s);if(s.valid())model.settings=s;}
+  bootStage="preferences";prefs.begin("crowpanel",false);uint8_t settingsVersion=prefs.getUChar("version",0);size_t storedSettingsSize=prefs.getBytesLength("settings");
+  if(settingsVersion==2&&storedSettingsSize==sizeof(cp::Settings)){cp::Settings s;prefs.getBytes("settings",&s,sizeof s);if(s.valid())model.settings=s;}
+  else if(settingsVersion==1&&storedSettingsSize==sizeof(LegacySettingsV1)){LegacySettingsV1 old{};prefs.getBytes("settings",&old,sizeof old);model.settings.theme=old.theme;model.settings.dayHour=old.dayHour;model.settings.nightHour=old.nightHour;model.settings.dayLight=old.dayLight;model.settings.nightLight=old.nightLight;model.settings.dayLed=old.dayLed;model.settings.nightLed=old.nightLed;model.settings.idleSeconds=old.idleSeconds;if(model.settings.valid()){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);}}
   bootStage="lcd-init";displayOk=lcd.init();lcd.setBrightness(90);
   bootStage="lcd-test";lcd.fillScreen(0x081020U);lcd.setTextColor(0xFFFFFFU);lcd.setTextSize(2);lcd.setCursor(65,100);lcd.print("CrowPanel");
   bootStage="led-init";leds.begin();leds.fill(leds.Color(0,0,12));leds.show();
@@ -170,7 +187,7 @@ void loop(){
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
   auto event=button.update(encoderPressed,now);if(event!=cp::ButtonEvent::None){touchBlockedUntil=now+450;bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){model.screen=1;model.edit=false;dirty=true;}else if(model.screen==3){if(event==cp::ButtonEvent::Single&&model.sourceSelection>=0)setHam(1,model.sourceSelection);else if(event==cp::ButtonEvent::Hold){model.screen=1;dirty=true;}}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(event==cp::ButtonEvent::Hold)media("previous");}}
   if(!model.playing&&model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
-  if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",1);settingsDirty=false;}lighting(now);
+  if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);settingsDirty=false;}lighting(now);
   if((dirty&&now-lastRender>60)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }

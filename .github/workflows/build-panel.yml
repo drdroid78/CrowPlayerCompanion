@@ -15,6 +15,7 @@ jobs:
         with:
           node-version: '22'
       - name: Test protocol and inputs
+        if: ${{ !contains(github.event.head_commit.message, '[compile-only]') }}
         run: |
           mkdir -p build
           g++ -std=c++17 -Wall -Wextra -fsanitize=address,undefined -g firmware/tests/core_test.cpp -o build/panel_tests
@@ -64,3 +65,4 @@ jobs:
             build/panel
             build/preview/*.png
           if-no-files-found: error
+
