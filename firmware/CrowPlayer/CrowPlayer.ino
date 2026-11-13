@@ -33,6 +33,8 @@ static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendi
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0,lastVolumeSetAt=0;static float brightness=18;
 static int queuedVolume=0;static uint8_t queuedVolumeCommand=2;
 static int8_t tabletVolumeQueued=0;static bool tabletVolumeKeyDown=false;static uint16_t tabletVolumeKey=0;static uint32_t tabletVolumeNextAt=0;
+// Android HID has no absolute-volume feedback, so retain the indicator position between overlay sessions.
+static int tabletVolumeScaleTick=26;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
 alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
 static const char* volatile bootStage="starting";
@@ -64,11 +66,12 @@ static void volume(int delta){
   model.volumeOverlayDirection=delta>0?1:-1;model.volumeOverlayAmount=cp::clamp(abs(delta),1,10);
   const bool tabletMode=model.settings.tabletVolume;
   const bool sub=!tabletMode&&model.subSelected&&model.screen==2;
-  if(!model.volumeOverlay||model.volumeOverlaySub!=sub){
+  if(tabletMode){model.volumeOverlayTick=tabletVolumeScaleTick;}
+  else if(!model.volumeOverlay||model.volumeOverlaySub!=sub){
     const int current=sub?model.ham.sub:model.ham.volume;
     model.volumeOverlayValue=tabletMode?-1:(sub?(current!=-128?current:0):(current>=0?current:0));
     const int units=sub?cp::clamp(int(model.volumeOverlayValue)+60,0,60):cp::clamp(int(model.volumeOverlayValue),0,60);
-    model.volumeOverlayTick=tabletMode?26:(units*51+30)/60;
+    model.volumeOverlayTick=(units*51+30)/60;
   }
   model.volumeOverlayTick=cp::clamp(int(model.volumeOverlayTick)+delta*(tabletMode?3:1),0,51);
   if(tabletMode)model.volumeOverlayValue=-1;
@@ -76,6 +79,7 @@ static void volume(int delta){
   else model.volumeOverlayValue=cp::clamp(int(model.volumeOverlayValue)+delta,0,60);
   model.volumeOverlaySub=sub;model.volumeOverlay=true;
   if(model.settings.tabletVolume){
+    tabletVolumeScaleTick=model.volumeOverlayTick;
     // Three short HID volume taps per detent make tablet adjustment responsive.
     tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta*3,-60,60);
     model.volumeOverlay=true;model.volumeOverlaySub=false;model.volumeOverlayUntil=millis()+1300;dirty=true;return;
