@@ -34,7 +34,7 @@ static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
 static void nav(int screen){for(int i=0;i<6;i++)disc(95+i*10,224,i==screen?3:2,i==screen?accent:0x464950);}
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,liked?accent:0xF5F5F5);}
-static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"Выбрать оформление →");break;case 1:snprintf(out,n,"%02u:00",s.dayHour);break;case 2:snprintf(out,n,"%02u:00",s.nightHour);break;case 3:snprintf(out,n,"%u%%",s.dayLight);break;case 4:snprintf(out,n,"%u%%",s.nightLight);break;case 5:snprintf(out,n,"%u%%",s.dayLed);break;case 6:snprintf(out,n,"%u%%",s.nightLed);break;case 7:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;}}
+static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;}}
 void render(const Model&m,uint32_t now){
   if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);lv_obj_set_style_bg_color(root,col(0x050609),0);lv_obj_set_style_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lv_obj_clean(root);iconLineCount=0;accent=themes[m.settings.theme].rgb;
   char b[160];bool ham=m.ham.online(now);
@@ -71,16 +71,16 @@ void render(const Model&m,uint32_t now){
       const uint32_t iconColor=selected?accent:(ham?0xE0E2E5:0x858A92);
       drawSourceIcon(source,x,y-7,iconColor);
       const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?52:44;
-      label(name,x-w/2,y+7,w,&cp_font_12,selected?accent:(ham?0xD0D2D5:0x858A92));
+      label(name,x-w/2,y+7,w,&cp_font_14,selected?accent:(ham?0xD0D2D5:0x858A92));
       if(active)disc(x+19,y-19,2,accent);
     }
     disc(120,118,32,0x101218);ring(120,118,35,0,359,m.ham.source>=0?accent:0x41454D,2);
     label(m.ham.source>=0?sourceName(m.ham.source):"--",75,105,90,&cp_font_16,0xF5F5F5);
-    if(m.ham.source>=0)label("АКТИВЕН",82,126,76,&cp_font_12,accent);
+    if(m.ham.source>=0)label("АКТИВЕН",82,126,76,&cp_font_14,accent);
   }else if(m.screen==4){
-    static const char* names[]={"Темы оформления","Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
+    static const char* names[]={"Начало дня","Начало ночи","Экран · день","Экран · ночь","LED · день","LED · ночь","Дежурный экран"};
     label("НАСТРОЙКИ",40,27,160,&cp_font_14,0xA5A9AF);
-    for(int row=-1;row<=1;row++){int key=(m.setting+row+8)%8;int y=63+(row+1)*43;bool selected=!row;if(selected){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,30,y-3);lv_obj_set_size(o,180,42);lv_obj_set_style_radius(o,10,0);lv_obj_set_style_bg_color(o,col(0x1B1F26),0);lv_obj_set_style_bg_opa(o,255,0);}label(names[key],35,y,170,&cp_font_14,selected?accent:0xA5A9AF);settingsText(m,key,b,sizeof b);label(b,33,y+17,174,&cp_font_14,selected?0xF5F5F5:0xA5A9AF);}
+    for(int row=-1;row<=1;row++){int key=(m.setting+row+7)%7;int y=63+(row+1)*43;bool selected=!row;if(selected){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,30,y-3);lv_obj_set_size(o,180,42);lv_obj_set_style_radius(o,10,0);lv_obj_set_style_bg_color(o,col(0x1B1F26),0);lv_obj_set_style_bg_opa(o,255,0);}label(names[key],35,y,170,&cp_font_14,selected?accent:0xA5A9AF);settingsText(m,key,b,sizeof b);label(b,33,y+17,174,&cp_font_14,selected?0xF5F5F5:0xA5A9AF);}
     label(m.edit?"Поворот · изменить":"Касание · изменить",30,198,180,&cp_font_14,m.edit?accent:0xA5A9AF);
   }else{
     static const char* shortNames[]={"Tornado","Lapiz","Reflex","Indium","Urano","Atlantic","Pure","Škoda"};
