@@ -36,6 +36,7 @@ static int8_t tabletVolumeQueued=0;static bool tabletVolumeKeyDown=false;static 
 // Android HID has no absolute-volume feedback, so retain the indicator position between overlay sessions.
 static int tabletVolumeScaleTick=26;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
+static constexpr size_t ARTWORK_BYTES=240*240*2;
 alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
 static const char* volatile bootStage="starting";
 struct LegacySettingsV1 {uint8_t theme,dayHour,nightHour,dayLight,nightLight,dayLed,nightLed;uint16_t idleSeconds;};
@@ -158,7 +159,7 @@ static void usbReceive(uint32_t now){
       model.likeKnown=d["liked"].is<bool>();model.liked=d["liked"]|false;model.likeAvailable=d["likeAvailable"]|false;if(changed){model.likePending=false;usbPendingId=0;}
       model.clock.sync(d["epochMs"]|uint64_t(0),now,d["utcOffsetMinutes"]|180);model.lastUsb=now;model.usb=true;dirty=true;
     }else if(!strcmp(type,"heartbeat")){model.lastUsb=now;model.usb=true;}
-    else if(!strcmp(type,"artwork_start")){uint32_t w=d["width"]|0,h=d["height"]|0;size_t bytes=d["bytes"]|0;artworkReceiving=w==240&&h==240&&bytes==sizeof(model.artwork);artworkExpected=artworkReceiving?bytes:0;artworkReceived=0;model.artworkPresent=false;}
+    else if(!strcmp(type,"artwork_start")){uint32_t w=d["width"]|0,h=d["height"]|0;size_t bytes=d["bytes"]|0;artworkReceiving=model.artwork&&w==240&&h==240&&bytes==ARTWORK_BYTES;artworkExpected=artworkReceiving?bytes:0;artworkReceived=0;model.artworkPresent=false;}
     else if(!strcmp(type,"artwork_chunk")&&artworkReceiving){size_t offset=d["offset"]|size_t(-1);const char*encoded=d["data"]|"";if(offset!=artworkReceived||offset>=artworkExpected){artworkReceiving=false;continue;}size_t written=decodeBase64(encoded,model.artwork+offset,artworkExpected-offset);if(!written){artworkReceiving=false;continue;}artworkReceived+=written;}
     else if(!strcmp(type,"artwork_end")){model.artworkPresent=artworkReceiving&&artworkReceived==artworkExpected;artworkReceiving=false;dirty=true;}
     else if(!strcmp(type,"artwork_clear")){artworkReceiving=false;model.artworkPresent=false;dirty=true;}
@@ -192,6 +193,7 @@ static void lighting(uint32_t now){
     f=cp::clamp(f,0.0f,1.0f);leds.setPixelColor(i,leds.Color(((color>>16)&255)*f,((color>>8)&255)*f,(color&255)*f));}leds.show();
 }
 void setup(){
+  bootStage="artwork-psram";if(psramFound())model.artwork=(uint8_t*)ps_malloc(ARTWORK_BYTES);
   pinMode(1,OUTPUT);digitalWrite(1,HIGH);pinMode(2,OUTPUT);digitalWrite(2,HIGH);pinMode(40,OUTPUT);digitalWrite(40,LOW);
   tablet.begin(115200);consumerControl.begin();USB.manufacturerName("DrDroid78");USB.productName("CrowPanel Skoda Edition");USB.begin();
   xTaskCreate(bootMonitor,"boot-monitor",3072,nullptr,1,nullptr);
