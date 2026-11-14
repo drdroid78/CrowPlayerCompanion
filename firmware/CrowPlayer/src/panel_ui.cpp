@@ -47,7 +47,7 @@ static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
 static void nav(int screen){for(int i=0;i<6;i++)disc(95+i*10,224,i==screen?3:2,i==screen?accent:0x464950);}
 static void timeText(char*out,uint32_t ms){snprintf(out,12,"%u:%02u",unsigned(ms/60000),unsigned(ms/1000%60));}
 static void heart(bool liked){label(liked?"♥":"♡",169,27,30,&cp_font_18,liked?accent:0xF5F5F5);}
-static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
+static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");break;}}
 static int wheelY(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(120.0f+100.0f*sinf(angle)));}
 static int wheelIconX(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(125.0f-100.0f*cosf(angle)));}
 static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=0x050609;uint32_t ink=selected?0xF5F5F5:0xB8C0CA;
@@ -88,7 +88,7 @@ void render(const Model&m,uint32_t now){
     // clockwise positions; the center always shows the active input.
     ring(120,118,30,0,359,ham&&m.ham.source>=0?accent:0x41454D,2);
     label(ham&&m.ham.source>=0?sourceName(m.ham.source):"--",90,101,60,&cp_font_16);
-    if(ham&&m.ham.source>=0)label("Активен",88,119,64,&cp_font_14,accent);
+    if(ham&&m.ham.source>=0)label("Активен",92,120,56,&cp_font_10,accent);
     const int count=sourceCount(m.ham);
     for(int i=0;i<count;i++){
       const int source=sourceAt(m.ham,i);int x,y;sourcePosition(i,count,x,y);
@@ -102,12 +102,12 @@ void render(const Model&m,uint32_t now){
     static const char* names[]={"День с","Ночь с","Ярк. дня","Ярк. ночи","LED днём","LED ночью","Тайм-аут","Громкость"};
     label("Настройки",40,14,160,&cp_font_bold_18);
     for(int offset=-1;offset<=1;offset++){
-      int key=(m.setting+offset+8)%8,y=120+offset*51,iconX=offset?34:22;
+      int key=(m.setting+offset+8)%8,y=120+offset*51,iconX=offset?42:30;
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:0x9399A2;
       if(selected)selectedRow(y);
       settingIcon(key,iconX,y,selected);
-      int valueWidth=key==7?(selected?72:34):50,valueX=224-valueWidth,labelX=iconX+19;
-      const lv_font_t* rowFont=selected?&cp_font_18:&cp_font_16;
+      int valueWidth=key==7?80:50,valueX=230-valueWidth,labelX=iconX+19;
+      const lv_font_t* rowFont=key==7?&cp_font_14:selected?&cp_font_18:&cp_font_16;
       leftLabel(names[key],labelX,y-(selected&&key!=7?8:7),valueX-labelX-3,rowFont,textColor);
       settingsText(m,key,b,sizeof b);
       label(b,valueX,y-7,valueWidth,&cp_font_14,selected?0xF5F5F5:0xAEB4BD);

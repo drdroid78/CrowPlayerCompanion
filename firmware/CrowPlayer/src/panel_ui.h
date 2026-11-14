@@ -2,6 +2,7 @@
 #include <lvgl.h>
 #include "panel_core.h"
 LV_FONT_DECLARE(cp_font_14);
+LV_FONT_DECLARE(cp_font_10);
 LV_FONT_DECLARE(cp_font_16);
 LV_FONT_DECLARE(cp_font_18);
 LV_FONT_DECLARE(cp_font_44);
