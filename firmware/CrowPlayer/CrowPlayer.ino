@@ -81,7 +81,8 @@ static void volume(int delta){
   model.volumeOverlaySub=sub;model.volumeOverlay=true;
   if(model.settings.tabletVolume){
     tabletVolumeScaleTick=model.volumeOverlayTick;
-    // Three short HID volume taps per detent make tablet adjustment responsive.
+    // Each encoder detent sends three short Consumer Control taps so the
+    // tablet level changes at a practical rate without blocking the loop.
     tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta*3,-60,60);
     model.volumeOverlay=true;model.volumeOverlaySub=false;model.volumeOverlayUntil=millis()+1300;dirty=true;return;
   }
@@ -120,7 +121,10 @@ static void tap(int x,int y){
   if(model.screen==1){if(x>=170&&y<64)media("like");else if(y>=202)media("play_pause");}
   else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
   else if(model.screen==3){int count=cp::sourceCount(model.ham);for(int i=0;i<count;i++){int sx,sy;cp::sourcePosition(i,count,sx,sy);if(abs(x-sx)<23&&abs(y-sy)<23){model.sourceSelection=cp::sourceAt(model.ham,i);dirty=true;setHam(1,model.sourceSelection);break;}}}
-  else if(model.screen==4||model.screen==5){
+  else if(model.screen==4){
+    if(y>=43&&y<198){int offset=y<94?-1:y<146?0:1;int selected=(model.setting+offset+8)%8;if(offset==0){model.edit=!model.edit;saveLater();}else{model.setting=selected;model.edit=false;}dirty=true;}
+  }
+  else if(model.screen==5){
     if(y>=35&&y<210){int row=(y-35)/35,offset=row-2,dy=offset*41;int inset=int(lroundf(125.0f-sqrtf(100.0f*100.0f-float(dy*dy))))-16;
       if(x>=inset&&x<236){
         if(model.screen==4){int selected=(model.setting+offset+8)%8;if(offset==0){model.edit=!model.edit;saveLater();}else{model.setting=selected;model.edit=false;}dirty=true;}
