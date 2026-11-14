@@ -12,6 +12,8 @@ int main(int argc,char**argv){
   cp::Model m;const uint32_t now=5000;m.clock.sync(1794515760000ULL,now,180);m.usb=true;m.likeKnown=m.likeAvailable=m.liked=true;m.playing=true;strcpy(m.title,"ГРУППА КРОВИ");strcpy(m.artist,"КИНО");m.position=87000;m.duration=214000;m.positionAt=now;m.ham.volume=45;m.ham.sub=-8;m.ham.mute=0;m.ham.source=0;m.ham.count=5;uint8_t sources[]={2,6,4,0,5};memcpy(m.ham.sources,sources,5);m.ham.seen=true;m.ham.lastRx=now;
   for(int theme=0;theme<8;theme++)for(int screen=0;screen<6;screen++){m.screen=screen;m.settings.theme=theme;cp::render(m,now);save(dest+"/theme-"+std::to_string(theme)+"-screen-"+std::to_string(screen)+".ppm");}
   m.settings.theme=1;m.screen=4;for(int setting=0;setting<8;setting++){m.setting=setting;cp::render(m,now);save(dest+"/settings-cursor-"+std::to_string(setting)+".ppm");}
+  m.screen=1;m.volumeOverlay=true;m.volumeOverlayTick=26;m.volumeOverlayDirection=1;m.settings.tabletVolume=true;cp::render(m,now);save(dest+"/volume-tablet-up.ppm");m.volumeOverlayDirection=-1;cp::render(m,now);save(dest+"/volume-tablet-down.ppm");m.settings.tabletVolume=false;m.volumeOverlayValue=45;cp::render(m,now);save(dest+"/volume-amplifier.ppm");m.volumeOverlay=false;
   m.screen=1;strcpy(m.title,"Очень длинное название трека, которое не должно закрывать исполнителя");strcpy(m.artist,"Длинное имя исполнителя и приглашённые музыканты");cp::render(m,now);save(dest+"/long-title.ppm");
   m=cp::Model();for(int screen=0;screen<4;screen++){m.screen=screen;cp::render(m,now);save(dest+"/offline-"+std::to_string(screen)+".ppm");}
 }
+

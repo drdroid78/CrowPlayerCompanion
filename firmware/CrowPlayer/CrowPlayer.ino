@@ -118,7 +118,7 @@ static void tabletVolumeTick(uint32_t now){
 }
 static void tap(int x,int y){
   if(model.screen==0){activity();return;}activity();
-  if(model.screen==1){if(x>=170&&y<64)media("like");else if(y>=202)media("play_pause");}
+  if(model.screen==1){if(x>=165&&y<70)media("like");else if((x>=178&&y>=135&&y<173)||y>=202)media("play_pause");}
   else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
   else if(model.screen==3){int count=cp::sourceCount(model.ham);for(int i=0;i<count;i++){int sx,sy;cp::sourcePosition(i,count,sx,sy);if(abs(x-sx)<23&&abs(y-sy)<23){model.sourceSelection=cp::sourceAt(model.ham,i);dirty=true;setHam(1,model.sourceSelection);break;}}}
   else if(model.screen==4){
