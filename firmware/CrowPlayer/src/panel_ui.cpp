@@ -97,7 +97,7 @@ void render(const Model&m,uint32_t now){
       const int source=sourceAt(m.ham,i);int x,y;sourcePositionForId(m.ham,i,x,y);
       const bool active=ham&&source==m.ham.source,selected=source==m.sourceSelection;
       if(selected&&!active)ring(x,y,23,0,359,accent,2);
-      drawSourceIcon(source,x,y-5,active?accent:0xF5F5F5,0.78f);
+      drawSourceIcon(source,x,y-5,active?accent:0xF5F5F5,1.0f);
       const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?58:42;
       label(name,x-w/2,y+12,w,&cp_font_14,active?accent:0xF5F5F5);
     }
