@@ -13,6 +13,17 @@ class YandexMusicApiTest {
     private val server = FakeYandexServer()
     private val api = YandexMusicApi(server)
 
+    @Test fun `cover lookup searches when numeric session id identifies another song`() {
+        val paths = mutableListOf<String>()
+        val lookup = YandexMusicApi(YandexTransport { request ->
+            paths += request.path
+            if (request.path == "/tracks") org.json.JSONObject("""{"result":[{"id":"447","title":"Other","artists":[{"name":"Else"}],"coverUri":"avatars.yandex.net/wrong/%%"}]}""")
+            else org.json.JSONObject("""{"result":{"tracks":{"results":[{"id":"999","title":"Song","artists":[{"name":"Artist"}],"durationMs":120000,"coverUri":"avatars.yandex.net/right/%%"}]}}}""")
+        })
+        assertEquals("https://avatars.yandex.net/right/400x400", lookup.coverUriForTrack("token", "447", "Song", "Artist", "", 120000))
+        assertEquals(listOf("/tracks", "/search"), paths)
+    }
+
     @Test fun `add and remove use distinct documented endpoints and form body`() {
         assertTrue(api.setLike("secret", "1", "101", true))
         assertTrue(server.liked.contains("101"))
@@ -63,3 +74,4 @@ class YandexMusicApiTest {
         assertThrows(YandexProblem::class.java) { unsafe.beginLogin() }
     }
 }
+
