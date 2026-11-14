@@ -254,7 +254,9 @@ void setup(){
   // Draw only after setup's blocking hardware delays, so the entire fade is
   // driven by the non-blocking main loop rather than skipped during startup.
   bootStage="splash";
-  lcd.pushImage(0,0,240,240,CROWPANEL_SPLASH_RGB565);
+  // The asset stores native RGB565 words; select the explicit LovyanGFX
+  // type so pushImage does not interpret them as byte-swapped pixels.
+  lcd.pushImage(0,0,240,240,reinterpret_cast<const lgfx::rgb565_t*>(CROWPANEL_SPLASH_RGB565));
   splashShownAt=millis();splashActive=true;
   if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
 }
