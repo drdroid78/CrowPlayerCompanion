@@ -67,7 +67,7 @@ void render(const Model&m,uint32_t now){
   if(m.screen==0){
     ring(120,120,103,135,405,0x252830,3);int minute=m.clock.minute();if(m.clock.epoch)ring(120,120,103,135,135+std::max(1,minute*270/1440),accent,4);
     m.clock.text(b);label(b,20,91,200,&cp_font_44);
-    if(m.usb)label("USB",40,170,160,&cp_font_14,accent);
+    if(m.usbHostConnected)label("USB",40,170,160,&cp_font_14,accent);
   }else if(m.screen==1){
     cover(m);
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,210,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);

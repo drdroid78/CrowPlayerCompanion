@@ -112,7 +112,7 @@ struct LineBuffer {
 };
 struct Model {
   Settings settings; Clock clock; HamState ham;
-  int screen=1,setting=0,sourceSelection=-1;bool edit=false,subSelected=false,usb=false,playing=false,liked=false,likeKnown=false,likeAvailable=false,likePending=false,requestPending=false;
+  int screen=1,setting=0,sourceSelection=-1;bool edit=false,subSelected=false,usb=false,usbHostConnected=false,playing=false,liked=false,likeKnown=false,likeAvailable=false,likePending=false,requestPending=false;
   bool volumeOverlay=false,volumeOverlaySub=false;uint32_t volumeOverlayUntil=0;
   int8_t volumeOverlayDirection=0;uint8_t volumeOverlayAmount=0,volumeOverlayTick=26;int16_t volumeOverlayValue=-1;
   bool artworkPresent=false;uint8_t* artwork=nullptr;

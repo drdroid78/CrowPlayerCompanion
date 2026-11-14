@@ -219,7 +219,9 @@ void setup(){
   if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
 }
 void loop(){
-  loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);usbReceive(now);hamReceive(now);
+  loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);
+  const bool usbHostConnected=bool(USB);if(model.usbHostConnected!=usbHostConnected){model.usbHostConnected=usbHostConnected;dirty=true;}
+  usbReceive(now);hamReceive(now);
   static uint32_t touchBlockedUntil=0;bool encoderPressed=digitalRead(41)==LOW;
   if(encoderPressed)touchBlockedUntil=now+450;
   touch(now,encoderPressed||int32_t(now-touchBlockedUntil)<0);
