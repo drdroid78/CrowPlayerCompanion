@@ -68,7 +68,7 @@ static void setHam(uint8_t cmd,int value){
   ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();if(cmd==2||cmd==3)lastVolumeSetAt=ampPendingAt;model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
 }
 static void volume(int delta){
-  volumeLedSlot=cp::stepLedSlot(volumeLedSlot,delta);
+  volumeLedSlot=cp::volumeLedStep(volumeLedSlot,delta);
   model.volumeOverlayDirection=delta>0?1:-1;model.volumeOverlayAmount=cp::clamp(abs(delta),1,10);
   const bool tabletMode=model.settings.tabletVolume;
   const bool sub=!tabletMode&&model.subSelected&&model.screen==2;
