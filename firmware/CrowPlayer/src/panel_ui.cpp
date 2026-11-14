@@ -37,8 +37,10 @@ static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5){
       line(x-13,y-5,x+14,y-5,c);line(x-14,y+5,x+13,y+5,c);outlineCircle(x-18,y-5,9,c);outlineCircle(x+18,y+5,9,c);label("-",x-23,y-11,10,&cp_font_14,c);label("+",x+13,y-1,10,&cp_font_14,c);break;}
     case 2: // Bluetooth rune
       line(x,y-14,x,y+14,c);line(x,y-14,x+7,y-7,c);line(x+7,y-7,x,y,c);line(x,y,x+7,y+7,c);line(x+7,y+7,x,y+14,c);line(x,y-8,x-7,y-1,c);line(x-7,y+1,x,y+8,c);break;
-    case 6: // USB trident, horizontal orientation from the attached reference
-      line(x-18,y,x+17,y,c);line(x-2,y,x-2,y-10,c);line(x-2,y-10,x-6,y-6,c);line(x-2,y-10,x+2,y-6,c);line(x+7,y,x+7,y+9,c);line(x+7,y+9,x+3,y+5,c);line(x+7,y+9,x+11,y+5,c);outlineCircle(x-2,y-13,5,c);line(x+17,y,x+12,y-4,c);line(x+17,y,x+12,y+4,c);break;
+    case 6: // Horizontal USB symbol: arrow, square and circular terminals.
+      line(x-15,y,x+14,y,c,2);disc(x-16,y,3,c);line(x+14,y,x+10,y-3,c,2);line(x+14,y,x+10,y+3,c,2);
+      line(x-8,y,x-4,y-6,c,2);line(x-4,y-6,x+1,y-6,c,2);disc(x+1,y-6,2,c);
+      line(x-5,y,x-1,y+6,c,2);line(x-1,y+6,x+5,y+6,c,2);disc(x+5,y+6,2,c);break;
     default: break;
   }
 }
@@ -48,7 +50,7 @@ static void heart(bool liked){label(liked?"♥":"♡",186,12,38,&cp_font_16,like
 static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:if(m.setting==7)snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");else snprintf(out,n,"%s",s.tabletVolume?"ПЛ":"УС");break;}}
 static int wheelY(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(120.0f+100.0f*sinf(angle)));}
 static int wheelIconX(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(125.0f-100.0f*cosf(angle)));}
-static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=selected?0x102A38:0x11151B;uint32_t ink=selected?accent:0xAAB2BD;disc(x,y,selected?12:11,bg);outlineCircle(x,y,selected?25:23,selected?accent:0x434B56);
+static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=0x050609;uint32_t ink=selected?0xF5F5F5:0xB8C0CA;
   if(key==0||key==1||key==6){outlineCircle(x,y,13,ink);line(x,y,x,y-4,ink,2);line(x,y,x+4,y+2,ink,2);if(key==6){line(x,y-9,x,y-7,ink,2);line(x-2,y-8,x+2,y-8,ink,2);}}
   else if(key==2||key==4){disc(x,y,3,ink);line(x,y-9,x,y-6,ink,2);line(x,y+6,x,y+9,ink,2);line(x-9,y,x-6,y,ink,2);line(x+6,y,x+9,y,ink,2);line(x-7,y-7,x-5,y-5,ink,2);line(x+5,y+5,x+7,y+7,ink,2);line(x+5,y-5,x+7,y-7,ink,2);line(x-7,y+7,x-5,y+5,ink,2);}
   else if(key==3||key==5){disc(x-1,y,7,ink);disc(x+4,y-3,7,bg);}
@@ -65,7 +67,7 @@ void render(const Model&m,uint32_t now){
   }else if(m.screen==1){
     cover(m);
     auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,210,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
-    if(!m.artworkPresent)label("♫",83,56,74,&cp_font_44,accent);
+    if(!m.artworkPresent){ring(120,89,46,0,359,accent,2);label("♫",83,56,74,&cp_font_44,accent);}
     if(m.ham.source>=0)drawSourceIcon(m.ham.source,26,22);
     heart(m.liked&&m.likeKnown);if(m.likePending)label("…",188,27,30,&cp_font_14,accent);
     uint32_t pos=m.position;if(m.playing&&m.usb)pos+=now-m.positionAt;pos=std::min(pos,m.duration);
@@ -75,29 +77,30 @@ void render(const Model&m,uint32_t now){
     line(65,191,175,191,0x303743,3);if(m.duration)line(65,191,65+int(uint64_t(pos)*110/m.duration),191,accent,3);
     if(m.playing){line(116,210,116,224,0xF5F5F5,3);line(124,210,124,224,0xF5F5F5,3);}else{line(116,210,126,217,0xF5F5F5,3);line(126,217,116,224,0xF5F5F5,3);line(116,224,116,210,0xF5F5F5,3);}
   }else if(m.screen==2){
-    label("ЗВУК",60,28,120,&cp_font_14,0xA5A9AF);ring(82,104,53,135,405,0x292C33,3);if(ham&&m.ham.volume>=0)ring(82,104,53,135,135+std::max(1,m.ham.volume*270/66),accent,4);
-    if(ham&&m.ham.volume>=0)snprintf(b,sizeof b,"%d",m.ham.volume);else strcpy(b,"--");label(b,37,78,90,&cp_font_44);label("ГРОМКОСТЬ",30,148,105,&cp_font_14,m.subSelected?0xA5A9AF:accent);
-    ring(177,104,33,135,405,0x292C33,2);if(ham&&m.ham.sub!=-128)snprintf(b,sizeof b,"%d",m.ham.sub);else strcpy(b,"--");label(b,147,91,60,&cp_font_16);label("САБ",148,148,58,&cp_font_14,m.subSelected?accent:0xA5A9AF);
+    label("Усилитель",40,20,160,&cp_font_18);ring(82,104,53,135,405,0x292C33,3);if(ham&&m.ham.volume>=0)ring(82,104,53,135,135+std::max(1,m.ham.volume*270/66),accent,4);
+    if(ham&&m.ham.volume>=0)snprintf(b,sizeof b,"%d",m.ham.volume);else strcpy(b,"--");label(b,37,78,90,&cp_font_44);label("Громкость",30,148,105,&cp_font_14,m.subSelected?0xA5A9AF:accent);
+    ring(177,104,33,135,405,0x292C33,2);if(ham&&m.ham.sub!=-128){ring(177,104,33,135,135+std::max(1,clamp(int(m.ham.sub)+60,0,60)*270/60),accent,3);snprintf(b,sizeof b,"%d",m.ham.sub);}else strcpy(b,"--");label(b,147,91,60,&cp_font_16);label("Саб",148,148,58,&cp_font_14,m.subSelected?accent:0xA5A9AF);
     if(ham&&m.ham.mute>=0)label(m.ham.mute==1?"MUTE · ВКЛ":"MUTE · ВЫКЛ",40,182,160,&cp_font_16,m.ham.mute==1?accent:0xD0D2D5);
   }else if(m.screen==3){
     // Original radial selector: the amplifier's advertised order determines
     // clockwise positions; the center always shows the active input.
-    disc(120,118,32,0x101218);ring(120,118,35,0,359,ham&&m.ham.source>=0?accent:0x41454D,2);
-    label(ham&&m.ham.source>=0?sourceName(m.ham.source):"--",90,109,60,&cp_font_16);
+    ring(120,118,30,0,359,ham&&m.ham.source>=0?accent:0x41454D,2);
+    label(ham&&m.ham.source>=0?sourceName(m.ham.source):"--",90,101,60,&cp_font_16);
+    if(ham&&m.ham.source>=0)label("Активен",88,122,64,&cp_font_14,accent);
     const int count=sourceCount(m.ham);
     for(int i=0;i<count;i++){
       const int source=sourceAt(m.ham,i);int x,y;sourcePosition(i,count,x,y);
       const bool active=ham&&source==m.ham.source,selected=source==m.sourceSelection;
-      disc(x,y,21,active?accent:0x22252C);
-      if(selected&&!active)ring(x,y,24,0,359,accent,2);
+      if(selected&&!active)ring(x,y,23,0,359,accent,2);
+      drawSourceIcon(source,x,y-5,active?accent:0xF5F5F5);
       const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?58:42;
-      label(name,x-w/2,y-7,w,&cp_font_14,active?0x050609:0xF5F5F5);
+      label(name,x-w/2,y+12,w,&cp_font_14,active?accent:0xF5F5F5);
     }
   }else if(m.screen==4){
     static const char* names[]={"День с","Ночь с","Ярк. дня","Ярк. ночи","LED днём","LED ночью","Тайм-аут","Громкость"};
-    label("НАСТРОЙКИ",40,15,160,&cp_font_14,0xA5A9AF);
-    for(int offset=-2;offset<=2;offset++){
-      int key=(m.setting+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
+    label("Настройки",40,14,160,&cp_font_18);
+    for(int offset=-1;offset<=1;offset++){
+      int key=(m.setting+offset+8)%8,y=120+offset*51,iconX=offset?34:22;
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:0x9399A2;
       if(selected)selectedRow(y);
       settingIcon(key,iconX,y,selected);
@@ -108,7 +111,7 @@ void render(const Model&m,uint32_t now){
       label(b,valueX,y-7,valueWidth,&cp_font_14,selected?0xF5F5F5:0xAEB4BD);
     }
   }else{
-    label("ТЕМА",40,15,160,&cp_font_14,0xA5A9AF);
+    label("Тема",40,15,160,&cp_font_18);
     for(int offset=-2;offset<=2;offset++){
       int index=(int(m.settings.theme)+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
@@ -123,15 +126,17 @@ void render(const Model&m,uint32_t now){
     char value[16];int current=m.volumeOverlayValue;
     volumeRing(m.volumeOverlayTick*100/51,accent);
     if(m.settings.tabletVolume){
-      label("VOLUME",60,77,120,&cp_font_14,0xB8CBD3);
-      label(m.volumeOverlayDirection>0?"UP":"DOWN",30,96,180,&cp_font_44,0xC4F4FF);
+      line(86,104,94,104,0xF5F5F5,3);line(94,104,107,94,0xF5F5F5,3);line(107,94,107,130,0xF5F5F5,3);line(107,130,94,120,0xF5F5F5,3);line(94,120,86,120,0xF5F5F5,3);line(86,120,86,104,0xF5F5F5,3);
+      int tip=m.volumeOverlayDirection>0?96:128,base=m.volumeOverlayDirection>0?128:96;line(139,base,139,tip,0xF5F5F5,3);line(139,tip,131,tip+(m.volumeOverlayDirection>0?8:-8),0xF5F5F5,3);line(139,tip,147,tip+(m.volumeOverlayDirection>0?8:-8),0xF5F5F5,3);
+      label("Громкость",55,151,130,&cp_font_18);
     }
     else if(current>=(m.volumeOverlaySub?-60:0)){
       snprintf(value,sizeof value,"%d",current);
-      label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);
+      label(m.volumeOverlaySub?"Саб":"Громкость",35,77,170,&cp_font_14,0xB8CBD3);
       label(value,30,94,180,&cp_font_44,0xC4F4FF);
       if(!m.volumeOverlaySub)label("%",80,150,80,&cp_font_16,0xB8CBD3);
     }else{label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
   }
 }
 }
+
