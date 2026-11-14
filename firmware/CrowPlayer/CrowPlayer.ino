@@ -37,6 +37,8 @@ static bool tabletMuteQueued=false,ampMuteQueued=false;static uint32_t ampMuteQu
 static bool touchHeld=false;
 // Android HID has no absolute-volume feedback, so retain the indicator position between overlay sessions.
 static int tabletVolumeScaleTick=26;
+// A moving light indicates rotation, independently of absolute volume.
+static int volumeLedSlot=0;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
 static constexpr size_t ARTWORK_BYTES=240*240*2;
 alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
@@ -66,6 +68,7 @@ static void setHam(uint8_t cmd,int value){
   ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();if(cmd==2||cmd==3)lastVolumeSetAt=ampPendingAt;model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
 }
 static void volume(int delta){
+  volumeLedSlot=cp::stepLedSlot(volumeLedSlot,delta);
   model.volumeOverlayDirection=delta>0?1:-1;model.volumeOverlayAmount=cp::clamp(abs(delta),1,10);
   const bool tabletMode=model.settings.tabletVolume;
   const bool sub=!tabletMode&&model.subSelected&&model.screen==2;
@@ -216,10 +219,9 @@ static void lighting(uint32_t now){
   const int sourceSlot=model.screen==3?cp::sourceLedSlot(model.ham,model.sourceSelection):-1;
   const int remaining=model.volumeOverlay?std::max<int32_t>(0,int32_t(model.volumeOverlayUntil-now)):0;
   const float volumeFade=cp::clamp(remaining/350.0f,0.0f,1.0f);
-  const float volumeUnits=cp::clamp(int(model.volumeOverlayTick),0,51)*5.0f/51.0f;
   for(int i=0;i<5;i++){int slot=ledClockwise?(i-ledTopIndex+5)%5:(ledTopIndex-i+5)%5;float f=base;
     if(effect==3)f=base*((t<150||(t>300&&t<450))?2:0.25f);
-    else if(remaining>0){float fill=cp::clamp(volumeUnits-slot,0.0f,1.0f);f=base*(1.0f-volumeFade+volumeFade*(0.15f+1.35f*fill));}
+    else if(remaining>0){float focus=slot==volumeLedSlot?1.8f:0.15f;float idle=sourceSlot>=0?(slot==sourceSlot?1.8f:0.12f):1.0f;f=base*(idle*(1.0f-volumeFade)+volumeFade*focus);}
     else if(sourceSlot>=0)f=base*(slot==sourceSlot?1.8f:0.12f);
     else if(effect==1&&int(t/80)%5==i)f=std::min(1.0f,base*2);else if(effect==2)f=base*(1+0.7f*sin(t*3.14159f/900));
     f=cp::clamp(f,0.0f,1.0f);leds.setPixelColor(i,leds.Color(((color>>16)&255)*f,((color>>8)&255)*f,(color&255)*f));}leds.show();
