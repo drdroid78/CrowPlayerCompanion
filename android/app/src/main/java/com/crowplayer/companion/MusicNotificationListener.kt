@@ -408,7 +408,9 @@ class MusicNotificationListener : NotificationListenerService() {
             val token = controller.sessionToken
             artworkExecutor.execute {
                 val loaded = runCatching {
-                    ArtworkLoader.load(this, artworkUri.orEmpty()) ?: run {
+                    // Some player content URIs cannot be opened by this app.
+                    // An inaccessible URI must not suppress the Yandex fallback.
+                    runCatching { ArtworkLoader.load(this, artworkUri.orEmpty()) }.getOrNull() ?: run {
                         val coverUri = if (isYandexPlayer)
                             YandexMusicApi().coverUriForTrack(yandexAccess, yandexTrack.mediaId, title, artist,
                                 metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty(),
