@@ -8,15 +8,18 @@ internal object YandexTrackMatcher {
     fun mediaId(value: String?): String? {
         val raw = value?.trim() ?: return null
         if (raw.matches(Regex("[0-9]+(:[0-9]+)?"))) return raw.substringBefore(':')
-        Regex("(?:^|[/:])track[/:]([0-9]+)(?:$|[/:?#])", RegexOption.IGNORE_CASE)
+        // MediaSession IDs vary between Yandex Music app versions: some use a
+        // track URL, others publish an app URI such as "track:12345".
+        Regex("^track[/:]([0-9]+)(?:$|[/:?#])", RegexOption.IGNORE_CASE)
             .find(raw)?.groupValues?.get(1)?.let { return it }
         return try {
             val uri = URI(raw)
             val host = uri.host?.lowercase(Locale.ROOT).orEmpty()
-            val isYandexMusicHost = listOf("ru", "com", "by", "kz").any { suffix ->
-                host == "music.yandex.$suffix" || host.endsWith(".music.yandex.$suffix")
-            }
-            if (uri.scheme !in setOf("https", "http") || !isYandexMusicHost) null
+            if (uri.scheme !in setOf("https", "http") ||
+                !(host == "music.yandex.ru" || host.endsWith(".music.yandex.ru") ||
+                    host == "music.yandex.com" || host.endsWith(".music.yandex.com") ||
+                    host == "music.yandex.by" || host.endsWith(".music.yandex.by") ||
+                    host == "music.yandex.kz" || host.endsWith(".music.yandex.kz"))) null
             else Regex("/(?:album/[0-9]+/)?track/([0-9]+)/?").matchEntire(uri.path)?.groupValues?.get(1)
         } catch (_: Exception) { null }
     }
@@ -33,3 +36,4 @@ internal object YandexTrackMatcher {
     private fun normalize(value: String) = value.lowercase(Locale.ROOT).replace('ё', 'е')
         .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
 }
+
