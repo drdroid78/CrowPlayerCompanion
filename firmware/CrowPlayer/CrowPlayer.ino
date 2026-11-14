@@ -34,6 +34,7 @@ static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int
 static int queuedVolume=0;static uint8_t queuedVolumeCommand=2;
 static int8_t tabletVolumeQueued=0;static bool tabletVolumeKeyDown=false;static uint16_t tabletVolumeKey=0;static uint32_t tabletVolumeNextAt=0;
 static bool tabletMuteQueued=false,ampMuteQueued=false;static uint32_t ampMuteQueuedAt=0;
+static bool touchHeld=false;
 // Android HID has no absolute-volume feedback, so retain the indicator position between overlay sessions.
 static int tabletVolumeScaleTick=26;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
@@ -157,11 +158,11 @@ static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uin
   if(abs(dx)>=24&&abs(dx)*10>=abs(dy)*11){tapPair.clear();bool asleep=model.screen==0;activity();if(asleep)return;model.screen=1+((model.screen-1+(dx<0?1:4))%5);if(model.screen==3)model.sourceSelection=model.ham.source>=0?model.ham.source:cp::sourceAt(model.ham,0);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
   else{
     if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){tapPair.clear();bool asleep=model.screen==0;activity();if(asleep)return;if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
-    else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600){model.activeAt=now;if(tapPair.matches(endX,endY,model.screen,now)){tapPair.clear();activity();requestMuteToggle(now);}else{dispatchPendingTap();tapPair.start(endX,endY,model.screen,now);}}
+    else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600){model.activeAt=now;if(tapPair.matches(endX,endY,model.screen,downAt)){tapPair.clear();activity();requestMuteToggle(now);}else{dispatchPendingTap();tapPair.start(endX,endY,model.screen,now);}}
   }
 }
 static void touch(uint32_t now,bool suppress){
-  static bool held=false;static int startX,startY,endX,endY;static uint32_t downAt=0,lastGoodRead=0;
+  static int startX,startY,endX,endY;static uint32_t downAt=0,lastGoodRead=0;bool&held=touchHeld;
   // The encoder's physical click can register as a touch on this small panel.
   // Drop any in-flight touch so it cannot trigger a tap or swipe as well.
   if(suppress){held=false;tapPair.clear();return;}
@@ -241,7 +242,7 @@ void loop(){
   static uint32_t touchBlockedUntil=0;bool encoderPressed=digitalRead(41)==LOW;
   if(encoderPressed)touchBlockedUntil=now+450;
   touch(now,encoderPressed||int32_t(now-touchBlockedUntil)<0);
-  if(tapPair.expired(now))dispatchPendingTap();
+  if(!touchHeld&&tapPair.expired(now))dispatchPendingTap();
   if(model.volumeOverlay&&int32_t(now-model.volumeOverlayUntil)>=0){model.volumeOverlay=false;dirty=true;}
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
   tabletVolumeTick(now);
