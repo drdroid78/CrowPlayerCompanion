@@ -185,27 +185,51 @@ internal class YandexMusicApi(private val transport: YandexTransport = YandexHtt
         return if (sized.startsWith("https://")) sized else "https://$sized"
     }
 
-
     /** Resolve cover art even when the Yandex player does not publish a numeric media ID. */
     fun coverUriForTrack(token: String?, mediaId: String?, title: String, artist: String,
                          album: String, durationMs: Long): String? {
         val id = YandexTrackMatcher.mediaId(mediaId)
-        if (id != null) return coverUriWithOptionalToken(token, id)
+        // MediaSession may publish a local numeric ID, not a Yandex catalogue ID.
+        // Never use its artwork until the returned track matches the current song.
+        if (id != null) {
+            val item = runCatching {
+                transport.execute(YandexHttpRequest("api.music.yandex.net", "/tracks", "POST",
+                    mapOf("track-ids" to id), token)).optJSONArray("result")?.optJSONObject(0)
+            }.getOrNull()
+            if (item != null && title.isNotBlank() && artist.isNotBlank()) {
+                val artists = item.optJSONArray("artists") ?: JSONArray()
+                val actualArtist = (0 until artists.length()).joinToString(", ") {
+                    artists.optJSONObject(it)?.optString("name").orEmpty()
+                }
+                val actualDuration = item.optLong("durationMs")
+                if (normalizeCoverText(item.optString("title")) == normalizeCoverText(title) &&
+                    normalizeCoverText(actualArtist) == normalizeCoverText(artist) &&
+                    (durationMs <= 0 || actualDuration <= 0 || kotlin.math.abs(durationMs - actualDuration) <= 2500L)) {
+                    val albums = item.optJSONArray("albums") ?: JSONArray()
+                    val uri = item.optString("coverUri").ifBlank {
+                        if (albums.length() > 0) albums.optJSONObject(0)?.optString("coverUri").orEmpty() else ""
+                    }
+                    if (uri.isNotBlank()) return imageUrl(uri)
+                }
+            }
+        }
         if (title.isBlank() || artist.isBlank()) return null
 
+        val query = "$artist $title"
         val response = transport.execute(YandexHttpRequest("api.music.yandex.net", "/search",
-            fields = mapOf("type" to "track", "page" to "0", "text" to "$artist $title"), token = token))
-        val tracks = response.optJSONObject("result")?.optJSONObject("tracks")?.optJSONArray("results") ?: return null
+            fields = mapOf("type" to "track", "page" to "0", "text" to query), token = token))
+        val tracks = response.optJSONObject("result")?.optJSONObject("tracks")?.optJSONArray("results")
+            ?: return null
         val wantedTitle = normalizeCoverText(title)
         val wantedArtist = normalizeCoverText(artist)
         val matches = (0 until tracks.length()).mapNotNull { index ->
             val item = tracks.optJSONObject(index) ?: return@mapNotNull null
-            if (normalizeCoverText(item.optString("title")) != wantedTitle) return@mapNotNull null
-            val artists = item.optJSONArray("artists") ?: JSONArray()
-            val itemArtist = normalizeCoverText((0 until artists.length()).joinToString(", ") {
-                artists.optJSONObject(it)?.optString("name").orEmpty()
+            val itemTitle = normalizeCoverText(item.optString("title"))
+            val itemArtists = item.optJSONArray("artists") ?: JSONArray()
+            val itemArtist = normalizeCoverText((0 until itemArtists.length()).joinToString(", ") {
+                itemArtists.optJSONObject(it)?.optString("name").orEmpty()
             })
-            if (itemArtist != wantedArtist) return@mapNotNull null
+            if (itemTitle != wantedTitle || itemArtist != wantedArtist) return@mapNotNull null
             val itemDuration = item.optLong("durationMs")
             if (durationMs > 0 && itemDuration > 0 && kotlin.math.abs(durationMs - itemDuration) > 2500L)
                 return@mapNotNull null
