@@ -50,6 +50,17 @@ struct Button {
     return ButtonEvent::None;
   }
 };
+// Keep the first tap pending until it is clear whether it is part of a pair.
+struct TapPair {
+  bool pending=false;int x=0,y=0,screen=0;uint32_t released=0;
+  static constexpr uint32_t intervalMs=350;
+  bool expired(uint32_t now)const{return pending&&uint32_t(now-released)>intervalMs;}
+  bool matches(int px,int py,int currentScreen,uint32_t now)const{
+    int dx=px-x,dy=py-y;return pending&&!expired(now)&&screen==currentScreen&&dx*dx+dy*dy<=40*40;
+  }
+  void start(int px,int py,int currentScreen,uint32_t now){pending=true;x=px;y=py;screen=currentScreen;released=now;}
+  void clear(){pending=false;}
+};
 struct HamState {
   int volume=-1,sub=-128,source=-1,mute=-1; uint8_t sources[9]={},count=0;
   uint32_t lastRx=0; bool seen=false;

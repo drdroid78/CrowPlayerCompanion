@@ -9,6 +9,7 @@ int main(){
   {Button b;assert(b.update(true,0)==ButtonEvent::None);b.update(false,5);b.update(true,10);b.update(true,40);b.update(false,80);b.update(false,110);assert(b.update(false,411)==ButtonEvent::Single);
    Button h;h.update(true,0);h.update(true,25);assert(h.update(true,725)==ButtonEvent::Hold);h.update(false,800);assert(h.update(false,1200)==ButtonEvent::None);
    Button d;d.update(true,0);d.update(true,25);d.update(false,50);d.update(false,75);d.update(true,100);d.update(true,125);d.update(false,150);assert(d.update(false,175)==ButtonEvent::Double);}
+  {TapPair t;t.start(100,100,0,0xfffffff0);assert(t.matches(110,105,0,0x40));assert(!t.matches(150,100,0,0x40));assert(!t.matches(100,100,1,0x40));assert(t.expired(0x151));t.clear();assert(!t.matches(100,100,0,0x40));}
   {Settings s;assert(daytime(s,420));assert(!daytime(s,419));assert(!daytime(s,1320));s.dayHour=22;s.nightHour=7;assert(daytime(s,1380));assert(daytime(s,60));assert(!daytime(s,600));}
   {Clock c;c.sync(1800000000000ULL,0xfffffff0,180);c.advance(16);assert(c.epoch==1800000000032ULL);assert(c.offset==180);char b[6];c.text(b);assert(strlen(b)==5);c.sync(5,0,0);assert(c.epoch==1800000000032ULL);}
   {uint8_t data=0x51;auto p=packet(1,1,0xBB,&data,1);uint8_t expected[]={0xAA,0x77,4,1,1,0xBB,0x51,0xEE};assert(p.size==8&&!memcmp(p.bytes,expected,8));

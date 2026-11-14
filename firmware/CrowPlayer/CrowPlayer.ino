@@ -24,7 +24,7 @@ class CrowDisplay:public lgfx::LGFX_Device {
 };
 CrowDisplay lcd;USBCDC tablet;USBHIDConsumerControl consumerControl;HardwareSerial amp(1);Preferences prefs;
 Adafruit_NeoPixel leds(5,48,NEO_GRB+NEO_KHZ800);
-cp::Model model;cp::HamParser parser;cp::LineBuffer usbLine;cp::Button button;
+cp::Model model;cp::HamParser parser;cp::LineBuffer usbLine;cp::Button button;cp::TapPair tapPair;
 static portMUX_TYPE encoderMux=portMUX_INITIALIZER_UNLOCKED;
 static volatile int32_t encoderSteps=0;static volatile uint8_t encoderPrevious=3;static volatile int8_t encoderPartial=0;
 static DRAM_ATTR const int8_t encoderTable[16]={0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
@@ -33,6 +33,7 @@ static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendi
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0,lastVolumeSetAt=0;static float brightness=18;
 static int queuedVolume=0;static uint8_t queuedVolumeCommand=2;
 static int8_t tabletVolumeQueued=0;static bool tabletVolumeKeyDown=false;static uint16_t tabletVolumeKey=0;static uint32_t tabletVolumeNextAt=0;
+static bool tabletMuteQueued=false,ampMuteQueued=false;static uint32_t ampMuteQueuedAt=0;
 // Android HID has no absolute-volume feedback, so retain the indicator position between overlay sessions.
 static int tabletVolumeScaleTick=26;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
@@ -109,12 +110,23 @@ static void tabletVolumeTick(uint32_t now){
     else tabletVolumeNextAt=now+20;
     return;
   }
-  if(!tabletVolumeQueued)return;
-  const bool up=tabletVolumeQueued>0;
-  tabletVolumeQueued+=up?-1:1;
-  tabletVolumeKey=up?CONSUMER_CONTROL_VOLUME_INCREMENT:CONSUMER_CONTROL_VOLUME_DECREMENT;
-  if(consumerControl.press(tabletVolumeKey)){tabletVolumeKeyDown=true;tabletVolumeNextAt=now+10;}
+  if(tabletMuteQueued){tabletMuteQueued=false;tabletVolumeKey=CONSUMER_CONTROL_MUTE;}
+  else {if(!tabletVolumeQueued)return;const bool up=tabletVolumeQueued>0;tabletVolumeQueued+=up?-1:1;tabletVolumeKey=up?CONSUMER_CONTROL_VOLUME_INCREMENT:CONSUMER_CONTROL_VOLUME_DECREMENT;}
+  if(consumerControl.press(tabletVolumeKey)){tabletVolumeKeyDown=true;tabletVolumeNextAt=now+10;if(tabletVolumeKey==CONSUMER_CONTROL_MUTE)notify("Mute");}
   else{tabletVolumeQueued=0;notify("HID громкости недоступен",true);tabletVolumeNextAt=now+100;}
+}
+static void requestMuteToggle(uint32_t now){
+  // Prefer the amplifier so every input is silenced. HID can mute only the
+  // connected host, and is used only when tablet volume mode is selected.
+  if(model.ham.online(now)){ampMuteQueued=!ampMuteQueued;ampMuteQueuedAt=now;}
+  else if(model.settings.tabletVolume&&model.usbHostConnected){tabletMuteQueued=!tabletMuteQueued;}
+  else notify("Mute недоступен",true);
+}
+static void ampMuteTick(uint32_t now){
+  if(!ampMuteQueued)return;
+  if(!model.ham.online(now)||uint32_t(now-ampMuteQueuedAt)>2000){ampMuteQueued=false;notify("Mute недоступен",true);return;}
+  if(ampPending||model.ham.mute<0)return;
+  ampMuteQueued=false;setHam(4,!model.ham.mute);
 }
 static void tap(int x,int y){
   if(model.screen==0){activity();return;}activity();
@@ -133,22 +145,26 @@ static void tap(int x,int y){
     }
   }
 }
+static void dispatchPendingTap(){
+  if(!tapPair.pending)return;const int x=tapPair.x,y=tapPair.y,screen=tapPair.screen;tapPair.clear();
+  if(model.screen==screen)tap(x,y);
+}
 static bool readTouch(uint8_t reg,uint8_t*out,size_t n){Wire1.beginTransmission(0x15);Wire1.write(reg);if(Wire1.endTransmission(false)!=0)return false;if(Wire1.requestFrom(uint8_t(0x15),uint8_t(n))!=n)return false;for(size_t i=0;i<n;i++)out[i]=Wire1.read();return true;}
 static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uint32_t downAt){
-  int dx=endX-startX,dy=endY-startY;bool asleep=model.screen==0;activity();if(asleep)return;
+  int dx=endX-startX,dy=endY-startY;
   // Use the full movement vector so short, slightly diagonal swipes still
   // navigate predictably on the small round touch surface.
-  if(abs(dx)>=24&&abs(dx)*10>=abs(dy)*11){model.screen=1+((model.screen-1+(dx<0?1:4))%5);if(model.screen==3)model.sourceSelection=model.ham.source>=0?model.ham.source:cp::sourceAt(model.ham,0);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
+  if(abs(dx)>=24&&abs(dx)*10>=abs(dy)*11){tapPair.clear();bool asleep=model.screen==0;activity();if(asleep)return;model.screen=1+((model.screen-1+(dx<0?1:4))%5);if(model.screen==3)model.sourceSelection=model.ham.source>=0?model.ham.source:cp::sourceAt(model.ham,0);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
   else{
-    if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
-    else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600)tap(endX,endY);
+    if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){tapPair.clear();bool asleep=model.screen==0;activity();if(asleep)return;if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
+    else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600){model.activeAt=now;if(tapPair.matches(endX,endY,model.screen,now)){tapPair.clear();activity();requestMuteToggle(now);}else{dispatchPendingTap();tapPair.start(endX,endY,model.screen,now);}}
   }
 }
 static void touch(uint32_t now,bool suppress){
   static bool held=false;static int startX,startY,endX,endY;static uint32_t downAt=0,lastGoodRead=0;
   // The encoder's physical click can register as a touch on this small panel.
   // Drop any in-flight touch so it cannot trigger a tap or swipe as well.
-  if(suppress){held=false;return;}
+  if(suppress){held=false;tapPair.clear();return;}
   if(now-lastTouch<12)return;lastTouch=now;uint8_t b[5];
   if(!readTouch(2,b,5)){if(held&&uint32_t(now-lastGoodRead)>180){held=false;finishTouch(now,startX,startY,endX,endY,downAt);}return;}
   bool pressed=(b[0]&15)>0;int x=((b[1]&15)<<8)|b[2],y=((b[3]&15)<<8)|b[4];if(pressed&&(x>=240||y>=240)){if(held&&uint32_t(now-lastGoodRead)>180){held=false;finishTouch(now,startX,startY,endX,endY,downAt);}return;}lastGoodRead=now;
@@ -181,7 +197,7 @@ static void hamReceive(uint32_t now){
       if(actual==ampTarget){ampPending=false;model.requestPending=false;effect=ampCommand==2?4:2;effectAt=now;}else if(ampAck){ampPending=false;model.requestPending=false;notify("HAM изменил значение",true);}}}
   }
   if(ampPending&&now-ampPendingAt>1000){ampPending=false;queuedVolume=0;model.requestPending=false;notify("HAM: нет подтверждения",true);}
-  if(!ampPending&&queuedVolume&&uint32_t(now-lastVolumeSetAt)>=100){int delta=queuedVolume;uint8_t cmd=queuedVolumeCommand;queuedVolume=0;if(model.ham.online(now)){if(cmd==2)setHam(2,model.ham.volume+delta);else if(cmd==3)setHam(3,model.ham.sub+delta);}}
+  if(!ampPending&&!ampMuteQueued&&queuedVolume&&uint32_t(now-lastVolumeSetAt)>=100){int delta=queuedVolume;uint8_t cmd=queuedVolumeCommand;queuedVolume=0;if(model.ham.online(now)){if(cmd==2)setHam(2,model.ham.volume+delta);else if(cmd==3)setHam(3,model.ham.sub+delta);}}
   if(!ampPending&&now-lastPoll>200){static const uint8_t commands[]={0,4,2,3,1};sendHam(commands[pollIndex++%5],0x66);lastPoll=now;}
 }
 static void lighting(uint32_t now){
@@ -221,10 +237,11 @@ void setup(){
 void loop(){
   loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);
   const bool usbHostConnected=bool(USB);if(model.usbHostConnected!=usbHostConnected){model.usbHostConnected=usbHostConnected;dirty=true;}
-  usbReceive(now);hamReceive(now);
+  usbReceive(now);hamReceive(now);ampMuteTick(now);
   static uint32_t touchBlockedUntil=0;bool encoderPressed=digitalRead(41)==LOW;
   if(encoderPressed)touchBlockedUntil=now+450;
   touch(now,encoderPressed||int32_t(now-touchBlockedUntil)<0);
+  if(tapPair.expired(now))dispatchPendingTap();
   if(model.volumeOverlay&&int32_t(now-model.volumeOverlayUntil)>=0){model.volumeOverlay=false;dirty=true;}
   int32_t steps;portENTER_CRITICAL(&encoderMux);steps=encoderSteps;encoderSteps=0;portEXIT_CRITICAL(&encoderMux);if(steps)rotate(cp::clamp(int(steps),-10,10));
   tabletVolumeTick(now);
