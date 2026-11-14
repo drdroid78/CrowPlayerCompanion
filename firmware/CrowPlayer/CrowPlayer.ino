@@ -101,7 +101,7 @@ static void media(const char*action){
 static int b64value(char c){if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;if(c=='+')return 62;if(c=='/')return 63;return -1;}
 static size_t decodeBase64(const char*src,uint8_t*out,size_t cap){uint32_t acc=0;int bits=0;size_t n=0;for(;*src;src++){int v=b64value(*src);if(v<0)break;acc=(acc<<6)|uint32_t(v);bits+=6;if(bits>=8){bits-=8;if(n>=cap)return 0;out[n++]=uint8_t(acc>>bits);}}return n;}
 static void editSetting(int delta){auto&s=model.settings;if(model.screen==5){s.theme=(s.theme+delta%8+8)%8;}else switch(model.setting){case 0:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 1:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 2:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 3:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 4:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 5:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 6:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;case 7:if(abs(delta)%2)s.tabletVolume=!s.tabletVolume;break;}saveLater();}
-static void rotate(int delta){activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(-delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting-delta%8+8)%8;dirty=true;}}else volume(delta);}
+static void rotate(int delta){activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceCycleIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceCycleAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(-delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting-delta%8+8)%8;dirty=true;}}else volume(delta);}
 static void tabletVolumeTick(uint32_t now){
   if(int32_t(now-tabletVolumeNextAt)<0)return;
   if(tabletVolumeKeyDown){
@@ -120,7 +120,7 @@ static void tap(int x,int y){
   if(model.screen==0){activity();return;}activity();
   if(model.screen==1){if(x>=165&&y<70)media("like");else if((x>=178&&y>=135&&y<173)||y>=202)media("play_pause");}
   else if(model.screen==2){if(y>=170){if(model.ham.mute>=0)setHam(4,!model.ham.mute);}else if(y>=65&&y<164){model.subSelected=x>135;dirty=true;}}
-  else if(model.screen==3){int count=cp::sourceCount(model.ham);for(int i=0;i<count;i++){int sx,sy;cp::sourcePosition(i,count,sx,sy);if(abs(x-sx)<23&&abs(y-sy)<23){model.sourceSelection=cp::sourceAt(model.ham,i);dirty=true;setHam(1,model.sourceSelection);break;}}}
+  else if(model.screen==3){int count=cp::sourceCount(model.ham);for(int i=0;i<count;i++){int sx,sy;int id=cp::sourceAt(model.ham,i);cp::sourcePositionForId(model.ham,i,sx,sy);if(abs(x-sx)<25&&abs(y-sy)<25){model.sourceSelection=id;dirty=true;setHam(1,model.sourceSelection);break;}}}
   else if(model.screen==4){
     if(y>=43&&y<198){int offset=y<94?-1:y<146?0:1;int selected=(model.setting+offset+8)%8;if(offset==0){model.edit=!model.edit;saveLater();}else{model.setting=selected;model.edit=false;}dirty=true;}
   }

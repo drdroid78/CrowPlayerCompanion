@@ -61,6 +61,20 @@ inline int sourceCount(const HamState&s){return s.count?std::min<int>(s.count,5)
 inline uint8_t sourceAt(const HamState&s,int i){static const uint8_t fallback[5]={0,4,5,2,6};int count=sourceCount(s);i=clamp(i,0,count-1);return s.count?s.sources[i]:fallback[i];}
 inline int sourceIndex(const HamState&s,int id){for(int i=0;i<sourceCount(s);i++)if(sourceAt(s,i)==id)return i;return -1;}
 inline void sourcePosition(int i,int count,int&x,int&y){count=clamp(count,1,5);i=clamp(i,0,count-1);float a=(-90.0f+i*360.0f/count)*0.01745329252f;x=120+int(cosf(a)*76);y=118+int(sinf(a)*76);}
+inline void sourcePositionForId(const HamState&s,int i,int&x,int&y){
+  // Fixed positions match the source screen; unknown sources keep the
+  // amplifier's advertised order rather than being assigned a wrong icon.
+  const int count=sourceCount(s),id=sourceAt(s,i);
+  const bool knownSet=!s.count||(s.count==5&&s.advertised(0)&&s.advertised(2)&&s.advertised(4)&&s.advertised(5)&&s.advertised(6));
+  if(count==5&&knownSet){switch(id){case 2:x=120;y=43;return;case 0:x=43;y=91;return;case 6:x=197;y=91;return;case 5:x=64;y=177;return;case 4:x=176;y=177;return;}}
+  sourcePosition(i,count,x,y);
+}
+inline uint8_t sourceCycleAt(const HamState&s,int i){
+  const bool knownSet=!s.count||(s.count==5&&s.advertised(0)&&s.advertised(2)&&s.advertised(4)&&s.advertised(5)&&s.advertised(6));
+  static const uint8_t clockwise[]={2,6,4,5,0};
+  return sourceCount(s)==5&&knownSet?clockwise[clamp(i,0,4)]:sourceAt(s,i);
+}
+inline int sourceCycleIndex(const HamState&s,int id){for(int i=0;i<sourceCount(s);i++)if(sourceCycleAt(s,i)==id)return i;return -1;}
 struct Packet {uint8_t bytes[68]={};size_t size=0;};
 inline Packet packet(uint8_t group,uint8_t command,uint8_t type,const uint8_t*data=nullptr,size_t n=0){
   Packet p;if(n>61)return p;p.size=n+7;p.bytes[0]=0xAA;p.bytes[1]=0x77;p.bytes[2]=n+3;p.bytes[3]=group;p.bytes[4]=command;p.bytes[5]=type;
