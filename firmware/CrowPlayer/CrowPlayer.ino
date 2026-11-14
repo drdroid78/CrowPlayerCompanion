@@ -210,7 +210,18 @@ static void lighting(uint32_t now){
   if(model.screen==4&&model.edit&&model.setting==3)target=model.settings.nightLight;
   brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);lcd.setBrightness(uint8_t(brightness*2.55f));float base=(model.clock.epoch?(previewDay?model.settings.dayLed:model.settings.nightLed):model.settings.dayLed)/100.0f;if(model.screen==4&&model.edit&&model.setting==4)base=model.settings.dayLed/100.0f;if(model.screen==4&&model.edit&&model.setting==5)base=model.settings.nightLed/100.0f;if(model.ham.mute==1)base*=0.25f;
   uint32_t color=cp::themes[model.settings.theme].rgb,t=now-effectAt;if(t>900)effect=0;
-  for(int i=0;i<5;i++){float f=base;if(effect==1&&int(t/80)%5==i)f=std::min(1.0f,base*2);else if(effect==2)f=base*(1+0.7f*sin(t*3.14159f/900));else if(effect==3)f=base*((t<150||(t>300&&t<450))?2:0.25f);else if(effect==4&&model.ham.online(now))f=base*(i*60/5<model.ham.volume?1.8f:0.12f);
+  // Logical slot 0 is at the top and slots advance clockwise. The wiring's
+  // physical starting point must be confirmed on the actual panel.
+  constexpr int ledTopIndex=0;constexpr bool ledClockwise=true;
+  const int sourceSlot=model.screen==3?cp::sourceLedSlot(model.ham,model.sourceSelection):-1;
+  const int remaining=model.volumeOverlay?std::max<int32_t>(0,int32_t(model.volumeOverlayUntil-now)):0;
+  const float volumeFade=cp::clamp(remaining/350.0f,0.0f,1.0f);
+  const float volumeUnits=cp::clamp(int(model.volumeOverlayTick),0,51)*5.0f/51.0f;
+  for(int i=0;i<5;i++){int slot=ledClockwise?(i-ledTopIndex+5)%5:(ledTopIndex-i+5)%5;float f=base;
+    if(effect==3)f=base*((t<150||(t>300&&t<450))?2:0.25f);
+    else if(remaining>0){float fill=cp::clamp(volumeUnits-slot,0.0f,1.0f);f=base*(1.0f-volumeFade+volumeFade*(0.15f+1.35f*fill));}
+    else if(sourceSlot>=0)f=base*(slot==sourceSlot?1.8f:0.12f);
+    else if(effect==1&&int(t/80)%5==i)f=std::min(1.0f,base*2);else if(effect==2)f=base*(1+0.7f*sin(t*3.14159f/900));
     f=cp::clamp(f,0.0f,1.0f);leds.setPixelColor(i,leds.Color(((color>>16)&255)*f,((color>>8)&255)*f,(color&255)*f));}leds.show();
 }
 void setup(){

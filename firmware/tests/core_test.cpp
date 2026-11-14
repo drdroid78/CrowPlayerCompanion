@@ -19,9 +19,10 @@ int main(){
    uint8_t cfg[]={5,0,4,5,2,6};p=packet(1,0,0xDD,cfg,6);assert(report(s,p,300));assert(s.count==5&&s.advertised(6)&&!s.advertised(3));cfg[0]=8;p=packet(1,0,0xDD,cfg,6);assert(!report(s,p,300));
    uint8_t src[]={0x53};p=packet(1,1,0xDD,src,1);assert(report(s,p,400)&&s.source==2);}
   {HamState s;s.count=5;uint8_t advertised[]={0,4,5,2,6};memcpy(s.sources,advertised,5);
-   const int ids[]={2,6,4,5,0};for(int i=0;i<5;i++){assert(sourceCycleAt(s,i)==ids[i]);assert(sourceCycleIndex(s,ids[i])==i);}
+   const int ids[]={2,6,4,5,0};for(int i=0;i<5;i++){assert(sourceCycleAt(s,i)==ids[i]);assert(sourceCycleIndex(s,ids[i])==i);assert(sourceLedSlot(s,ids[i])==i);}assert(sourceLedSlot(s,3)==-1);
    int x,y;sourcePositionForId(s,sourceIndex(s,2),x,y);assert(x==120&&y==43);sourcePositionForId(s,sourceIndex(s,5),x,y);assert(x==64&&y==177);
-   s.sources[4]=3;sourcePositionForId(s,0,x,y);int expectedX,expectedY;sourcePosition(0,5,expectedX,expectedY);assert(x==expectedX&&y==expectedY);assert(sourceCycleAt(s,0)==0);}
+   s.sources[4]=3;sourcePositionForId(s,0,x,y);int expectedX,expectedY;sourcePosition(0,5,expectedX,expectedY);assert(x==expectedX&&y==expectedY);assert(sourceCycleAt(s,0)==0);
+   s.count=3;assert(sourceLedSlot(s,s.sources[0])==0);assert(sourceLedSlot(s,s.sources[1])==2);assert(sourceLedSlot(s,s.sources[2])==3);}
   {HamParser p;auto valid=packet(1,4,0x66);p.feed(0,0);p.feed(0xAA,1);p.feed(0xAA,2);p.feed(0x77,3);p.feed(0xFF,4);bool ready=false;for(size_t i=0;i<valid.size;i++)ready=p.feed(valid.bytes[i],10+i);assert(ready);
    valid.bytes[6]^=1;for(size_t i=0;i<valid.size;i++)assert(!p.feed(valid.bytes[i],30+i));p.feed(0xAA,50);assert(!p.feed(0x77,100));}
   {LineBuffer b;for(int i=0;i<3000;i++)assert(!b.feed('x'));assert(!b.feed('\n'));b.feed('{');b.feed('}');assert(b.feed('\n')&&!strcmp(b.data,"{}"));}

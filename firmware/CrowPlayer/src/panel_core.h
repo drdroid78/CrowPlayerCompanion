@@ -86,6 +86,12 @@ inline uint8_t sourceCycleAt(const HamState&s,int i){
   return sourceCount(s)==5&&knownSet?clockwise[clamp(i,0,4)]:sourceAt(s,i);
 }
 inline int sourceCycleIndex(const HamState&s,int id){for(int i=0;i<sourceCount(s);i++)if(sourceCycleAt(s,i)==id)return i;return -1;}
+// Logical LED positions are top, then clockwise. Physical wiring orientation
+// is applied separately by the board driver.
+inline int sourceLedSlot(const HamState&s,int id){
+  int index=sourceCycleIndex(s,id);if(index<0)return -1;
+  int count=sourceCount(s);return ((index*5+count/2)/count)%5;
+}
 struct Packet {uint8_t bytes[68]={};size_t size=0;};
 inline Packet packet(uint8_t group,uint8_t command,uint8_t type,const uint8_t*data=nullptr,size_t n=0){
   Packet p;if(n>61)return p;p.size=n+7;p.bytes[0]=0xAA;p.bytes[1]=0x77;p.bytes[2]=n+3;p.bytes[3]=group;p.bytes[4]=command;p.bytes[5]=type;
