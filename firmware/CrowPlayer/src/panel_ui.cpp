@@ -106,7 +106,7 @@ void render(const Model&m,uint32_t now){
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:0x9399A2;
       if(selected)selectedRow(y);
       settingIcon(key,iconX,y,selected);
-      int valueWidth=key==7?80:50,valueX=230-valueWidth,labelX=iconX+19;
+      int valueWidth=key==7?80:50,valueX=222-valueWidth,labelX=iconX+19;
       const lv_font_t* rowFont=key==7?&cp_font_14:selected?&cp_font_18:&cp_font_16;
       leftLabel(names[key],labelX,y-(selected&&key!=7?8:7),valueX-labelX-3,rowFont,textColor);
       settingsText(m,key,b,sizeof b);
