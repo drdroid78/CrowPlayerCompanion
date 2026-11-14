@@ -13,6 +13,7 @@
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include "crowplayer_secrets.h"
+#include "crowpanel_splash.h"
 #include "src/panel_ui.h"
 class CrowDisplay:public lgfx::LGFX_Device {
   lgfx::Panel_GC9A01 panel;lgfx::Bus_SPI bus;lgfx::Light_PWM light;
@@ -80,16 +81,15 @@ static void volume(int delta){
     const int units=sub?cp::clamp(int(model.volumeOverlayValue)+60,0,60):cp::clamp(int(model.volumeOverlayValue),0,60);
     model.volumeOverlayTick=(units*51+30)/60;
   }
-  model.volumeOverlayTick=cp::clamp(int(model.volumeOverlayTick)+delta*(tabletMode?3:1),0,51);
+  model.volumeOverlayTick=cp::clamp(int(model.volumeOverlayTick)+delta,0,51);
   if(tabletMode)model.volumeOverlayValue=-1;
   else if(sub)model.volumeOverlayValue=cp::clamp(int(model.volumeOverlayValue)+delta,-60,0);
   else model.volumeOverlayValue=cp::clamp(int(model.volumeOverlayValue)+delta,0,60);
   model.volumeOverlaySub=sub;model.volumeOverlay=true;
   if(model.settings.tabletVolume){
     tabletVolumeScaleTick=model.volumeOverlayTick;
-    // Each encoder detent sends three short Consumer Control taps so the
-    // tablet level changes at a practical rate without blocking the loop.
-    tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta*3,-60,60);
+    // One HID tap per detent; the Android host controls the actual step size.
+    tabletVolumeQueued=cp::clamp(int(tabletVolumeQueued)+delta,-60,60);
     model.volumeOverlay=true;model.volumeOverlaySub=false;model.volumeOverlayUntil=millis()+1300;dirty=true;return;
   }
   uint8_t cmd=sub?3:2;
@@ -161,7 +161,7 @@ static void finishTouch(uint32_t now,int startX,int startY,int endX,int endY,uin
   // navigate predictably on the small round touch surface.
   if(abs(dx)>=24&&abs(dx)*10>=abs(dy)*11){tapPair.clear();bool asleep=model.screen==0;activity();if(asleep)return;model.screen=1+((model.screen-1+(dx<0?1:4))%5);if(model.screen==3)model.sourceSelection=model.ham.source>=0?model.ham.source:cp::sourceAt(model.ham,0);model.edit=false;model.subSelected=false;effect=1;effectAt=now;dirty=true;}
   else{
-    if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){tapPair.clear();bool asleep=model.screen==0;activity();if(asleep)return;if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){editSetting(dy<0?1:-1);}else volume(cp::clamp(-dy/12,-10,10));}
+    if(abs(dy)>=22&&abs(dy)*10>=abs(dx)*11){tapPair.clear();bool asleep=model.screen==0;activity();if(asleep)return;if(model.screen==4){if(model.edit)editSetting(dy<0?1:-1);else model.setting=(model.setting+(dy<0?1:7))%8;dirty=true;}else if(model.screen==5){editSetting(dy<0?1:-1);}else if(model.settings.tabletVolume){int steps=cp::clamp((abs(dy)+35)/36,1,3);volume(dy<0?steps:-steps);}else volume(cp::clamp(-dy/12,-10,10));}
     else if(abs(dx)<18&&abs(dy)<18&&now-downAt<600){model.activeAt=now;if(tapPair.matches(endX,endY,model.screen,downAt)){tapPair.clear();activity();requestMuteToggle(now);}else{dispatchPendingTap();tapPair.start(endX,endY,model.screen,now);}}
   }
 }
@@ -253,7 +253,9 @@ void setup(){
   lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<lgfx::rgb565_t*>(p));flushCount++;lv_display_flush_ready(display);});
   // Draw only after setup's blocking hardware delays, so the entire fade is
   // driven by the non-blocking main loop rather than skipped during startup.
-  bootStage="splash";lcd.fillScreen(0x081020U);lcd.setTextColor(0xFFFFFFU);lcd.setTextSize(2);lcd.setCursor(65,100);lcd.print("CrowPanel");splashShownAt=millis();splashActive=true;
+  bootStage="splash";
+  lcd.pushImage(0,0,240,240,CROWPANEL_SPLASH_RGB565);
+  splashShownAt=millis();splashActive=true;
   if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
 }
 void loop(){
