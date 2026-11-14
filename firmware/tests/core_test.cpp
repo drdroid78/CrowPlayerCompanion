@@ -13,6 +13,7 @@ int main(){
   {assert(stepLedSlot(0,1)==1);assert(stepLedSlot(4,1)==0);assert(stepLedSlot(0,-1)==4);assert(stepLedSlot(3,-7)==1);assert(stepLedSlot(2,5)==2);}
   {assert(physicalLedSlot(0,0,false)==0);assert(physicalLedSlot(4,0,false)==1);assert(physicalLedSlot(1,0,false)==4);assert(physicalLedSlot(1,0,true)==1);}
   {Settings s;assert(daytime(s,420));assert(!daytime(s,419));assert(!daytime(s,1320));s.dayHour=22;s.nightHour=7;assert(daytime(s,1380));assert(daytime(s,60));assert(!daytime(s,600));}
+  {assert(splashBacklightFactor(0)==0.0f);assert(splashBacklightFactor(650)==1.0f);assert(splashBacklightFactor(2350)==1.0f);assert(splashBacklightFactor(3000)==0.0f);assert(splashBacklightFactor(325)>0.49f&&splashBacklightFactor(325)<0.51f);assert(splashBacklightFactor(2675)>0.49f&&splashBacklightFactor(2675)<0.51f);}
   {Clock c;c.sync(1800000000000ULL,0xfffffff0,180);c.advance(16);assert(c.epoch==1800000000032ULL);assert(c.offset==180);char b[6];c.text(b);assert(strlen(b)==5);c.sync(5,0,0);assert(c.epoch==1800000000032ULL);}
   {uint8_t data=0x51;auto p=packet(1,1,0xBB,&data,1);uint8_t expected[]={0xAA,0x77,4,1,1,0xBB,0x51,0xEE};assert(p.size==8&&!memcmp(p.bytes,expected,8));
    uint8_t sub=8;p=packet(1,3,0xBB,&sub,1);assert(p.bytes[7]==0x35);uint8_t ack[]={0xAA,0x77,4,1,2,0xEE,0x0A,1};parse(ack,8);}

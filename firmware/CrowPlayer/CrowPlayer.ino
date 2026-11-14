@@ -29,6 +29,7 @@ static portMUX_TYPE encoderMux=portMUX_INITIALIZER_UNLOCKED;
 static volatile int32_t encoderSteps=0;static volatile uint8_t encoderPrevious=3;static volatile int8_t encoderPartial=0;
 static DRAM_ATTR const int8_t encoderTable[16]={0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
 static bool dirty=true,settingsDirty=false,otaReady=false;static uint32_t settingsAt=0,lastRender=0,lastTick=0,lastPoll=0,lastTouch=0,lastLed=0,effectAt=0;
+static constexpr uint32_t panelFadeMs=250;static uint32_t splashShownAt=0,panelRevealAt=0;static bool splashActive=false,panelRevealing=false;
 static int effect=0;static uint8_t pollIndex=0;static uint32_t nextId=1,usbPendingId=0,usbPendingAt=0;
 static bool ampPending=false,ampAck=false;static uint8_t ampCommand=0;static int ampTarget=0;static uint32_t ampPendingAt=0,lastVolumeSetAt=0;static float brightness=18;
 static int queuedVolume=0;static uint8_t queuedVolumeCommand=2;
@@ -211,7 +212,11 @@ static void lighting(uint32_t now){
   if(model.screen==4&&model.edit&&(model.setting==3||model.setting==5))previewDay=false;
   if(model.screen==4&&model.edit&&model.setting==2)target=model.settings.dayLight;
   if(model.screen==4&&model.edit&&model.setting==3)target=model.settings.nightLight;
-  brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);lcd.setBrightness(uint8_t(brightness*2.55f));float base=(model.clock.epoch?(previewDay?model.settings.dayLed:model.settings.nightLed):model.settings.dayLed)/100.0f;if(model.screen==4&&model.edit&&model.setting==4)base=model.settings.dayLed/100.0f;if(model.screen==4&&model.edit&&model.setting==5)base=model.settings.nightLed/100.0f;if(model.ham.mute==1)base*=0.25f;
+  brightness+=cp::clamp(target-brightness,-elapsed*0.05f,elapsed*0.05f);
+  float displayFade=1.0f;
+  if(splashActive)displayFade=cp::splashBacklightFactor(uint32_t(now-splashShownAt));
+  else if(panelRevealing){uint32_t age=uint32_t(now-panelRevealAt);if(age>=panelFadeMs)panelRevealing=false;else displayFade=float(age)/panelFadeMs;}
+  lcd.setBrightness(uint8_t(brightness*displayFade*2.55f));float base=(model.clock.epoch?(previewDay?model.settings.dayLed:model.settings.nightLed):model.settings.dayLed)/100.0f;if(model.screen==4&&model.edit&&model.setting==4)base=model.settings.dayLed/100.0f;if(model.screen==4&&model.edit&&model.setting==5)base=model.settings.nightLed/100.0f;if(model.ham.mute==1)base*=0.25f;
   uint32_t color=cp::themes[model.settings.theme].rgb,t=now-effectAt;if(t>900)effect=0;
   // Logical slot 0 is at the top and slots advance clockwise. The wiring's
   // physical starting point must be confirmed on the actual panel.
@@ -236,8 +241,8 @@ void setup(){
   bootStage="preferences";prefs.begin("crowpanel",false);uint8_t settingsVersion=prefs.getUChar("version",0);size_t storedSettingsSize=prefs.getBytesLength("settings");
   if(settingsVersion==2&&storedSettingsSize==sizeof(cp::Settings)){cp::Settings s;prefs.getBytes("settings",&s,sizeof s);if(s.valid())model.settings=s;}
   else if(settingsVersion==1&&storedSettingsSize==sizeof(LegacySettingsV1)){LegacySettingsV1 old{};prefs.getBytes("settings",&old,sizeof old);model.settings.theme=old.theme;model.settings.dayHour=old.dayHour;model.settings.nightHour=old.nightHour;model.settings.dayLight=old.dayLight;model.settings.nightLight=old.nightLight;model.settings.dayLed=old.dayLed;model.settings.nightLed=old.nightLed;model.settings.idleSeconds=old.idleSeconds;if(model.settings.valid()){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);}}
-  bootStage="lcd-init";displayOk=lcd.init();lcd.setBrightness(90);
-  bootStage="lcd-test";lcd.fillScreen(0x081020U);lcd.setTextColor(0xFFFFFFU);lcd.setTextSize(2);lcd.setCursor(65,100);lcd.print("CrowPanel");
+  brightness=model.settings.dayLight;
+  bootStage="lcd-init";displayOk=lcd.init();lcd.setBrightness(0);
   bootStage="led-init";leds.begin();leds.fill(leds.Color(0,0,12));leds.show();
   bootStage="touch-init";
   pinMode(5,OUTPUT);digitalWrite(5,HIGH);delay(1);digitalWrite(5,LOW);delay(1);
@@ -246,6 +251,9 @@ void setup(){
   bootStage="uart-init";amp.begin(115200,SERIAL_8N1,44,43,true);
   bootStage="lv-init";lv_init();bootStage="lv-display";auto*d=lv_display_create(240,240);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,drawBuffer,nullptr,sizeof drawBuffer,LV_DISPLAY_RENDER_MODE_PARTIAL);
   lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<lgfx::rgb565_t*>(p));flushCount++;lv_display_flush_ready(display);});
+  // Draw only after setup's blocking hardware delays, so the entire fade is
+  // driven by the non-blocking main loop rather than skipped during startup.
+  bootStage="splash";lcd.fillScreen(0x081020U);lcd.setTextColor(0xFFFFFFU);lcd.setTextSize(2);lcd.setCursor(65,100);lcd.print("CrowPanel");splashShownAt=millis();splashActive=true;
   if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
 }
 void loop(){
@@ -263,7 +271,8 @@ void loop(){
   if(!model.playing&&model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
   if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);settingsDirty=false;}lighting(now);
   const uint32_t renderInterval=model.volumeOverlay?180:60;
-  if((dirty&&now-lastRender>renderInterval)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();bootStage="running";
+  if(splashActive&&uint32_t(now-splashShownAt)>=cp::splashDurationMs){splashActive=false;panelRevealing=true;panelRevealAt=now;dirty=true;}
+  if(!splashActive){if((dirty&&now-lastRender>renderInterval)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();}bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
 

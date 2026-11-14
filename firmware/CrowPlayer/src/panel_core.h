@@ -25,6 +25,13 @@ struct Clock {
   }
 };
 inline bool daytime(const Settings&s,int minute){int d=s.dayHour*60,n=s.nightHour*60;return d==n || (d<n ? minute>=d&&minute<n : minute>=d||minute<n);}
+constexpr uint32_t splashDurationMs=3000,splashFadeMs=650;
+inline float splashBacklightFactor(uint32_t age){
+  if(age>=splashDurationMs)return 0.0f;
+  if(age<splashFadeMs)return float(age)/splashFadeMs;
+  if(age>=splashDurationMs-splashFadeMs)return float(splashDurationMs-age)/splashFadeMs;
+  return 1.0f;
+}
 // A full four-transition cycle emits one step; a diagonal jump invalidates partial motion.
 struct Quadrature {
   uint8_t previous=3; int8_t partial=0;
