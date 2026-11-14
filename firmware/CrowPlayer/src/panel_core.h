@@ -93,8 +93,8 @@ inline int sourceLedSlot(const HamState&s,int id){
   int count=sourceCount(s);return ((index*5+count/2)/count)%5;
 }
 inline int stepLedSlot(int slot,int delta){return ((slot%5+delta%5)%5+5)%5;}
-// The physical LED chain runs opposite to the encoder's positive direction.
-inline int volumeLedStep(int slot,int encoderDelta){return stepLedSlot(slot,-(encoderDelta%5));}
+// Map the hardware LED index onto a logical position around the screen.
+inline int physicalLedSlot(int index,int top,bool clockwise){return clockwise?stepLedSlot(index,-top):stepLedSlot(top,-index);}
 struct Packet {uint8_t bytes[68]={};size_t size=0;};
 inline Packet packet(uint8_t group,uint8_t command,uint8_t type,const uint8_t*data=nullptr,size_t n=0){
   Packet p;if(n>61)return p;p.size=n+7;p.bytes[0]=0xAA;p.bytes[1]=0x77;p.bytes[2]=n+3;p.bytes[3]=group;p.bytes[4]=command;p.bytes[5]=type;

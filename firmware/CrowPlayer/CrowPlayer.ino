@@ -68,7 +68,7 @@ static void setHam(uint8_t cmd,int value){
   ampPending=true;ampAck=false;ampCommand=cmd;ampTarget=value;ampPendingAt=millis();if(cmd==2||cmd==3)lastVolumeSetAt=ampPendingAt;model.requestPending=true;sendHam(cmd,0xBB,&raw,1);dirty=true;
 }
 static void volume(int delta){
-  volumeLedSlot=cp::volumeLedStep(volumeLedSlot,delta);
+  volumeLedSlot=cp::stepLedSlot(volumeLedSlot,delta);
   model.volumeOverlayDirection=delta>0?1:-1;model.volumeOverlayAmount=cp::clamp(abs(delta),1,10);
   const bool tabletMode=model.settings.tabletVolume;
   const bool sub=!tabletMode&&model.subSelected&&model.screen==2;
@@ -215,11 +215,11 @@ static void lighting(uint32_t now){
   uint32_t color=cp::themes[model.settings.theme].rgb,t=now-effectAt;if(t>900)effect=0;
   // Logical slot 0 is at the top and slots advance clockwise. The wiring's
   // physical starting point must be confirmed on the actual panel.
-  constexpr int ledTopIndex=0;constexpr bool ledClockwise=true;
+  constexpr int ledTopIndex=0;constexpr bool ledClockwise=false;
   const int sourceSlot=model.screen==3?cp::sourceLedSlot(model.ham,model.sourceSelection):-1;
   const int remaining=model.volumeOverlay?std::max<int32_t>(0,int32_t(model.volumeOverlayUntil-now)):0;
   const float volumeFade=cp::clamp(remaining/350.0f,0.0f,1.0f);
-  for(int i=0;i<5;i++){int slot=ledClockwise?(i-ledTopIndex+5)%5:(ledTopIndex-i+5)%5;float f=base;
+  for(int i=0;i<5;i++){int slot=cp::physicalLedSlot(i,ledTopIndex,ledClockwise);float f=base;
     if(effect==3)f=base*((t<150||(t>300&&t<450))?2:0.25f);
     else if(remaining>0){float focus=slot==volumeLedSlot?1.8f:0.15f;float idle=sourceSlot>=0?(slot==sourceSlot?1.8f:0.12f):1.0f;f=base*(idle*(1.0f-volumeFade)+volumeFade*focus);}
     else if(sourceSlot>=0)f=base*(slot==sourceSlot?1.8f:0.12f);
