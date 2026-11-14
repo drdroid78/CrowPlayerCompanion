@@ -158,7 +158,7 @@ static void usbReceive(uint32_t now){
       model.likeKnown=d["liked"].is<bool>();model.liked=d["liked"]|false;model.likeAvailable=d["likeAvailable"]|false;if(changed){model.likePending=false;usbPendingId=0;}
       model.clock.sync(d["epochMs"]|uint64_t(0),now,d["utcOffsetMinutes"]|180);model.lastUsb=now;model.usb=true;dirty=true;
     }else if(!strcmp(type,"heartbeat")){model.lastUsb=now;model.usb=true;}
-    else if(!strcmp(type,"artwork_start")){uint32_t w=d["width"]|0,h=d["height"]|0;size_t bytes=d["bytes"]|0;artworkReceiving=w==96&&h==96&&bytes==sizeof(model.artwork);artworkExpected=artworkReceiving?bytes:0;artworkReceived=0;model.artworkPresent=false;}
+    else if(!strcmp(type,"artwork_start")){uint32_t w=d["width"]|0,h=d["height"]|0;size_t bytes=d["bytes"]|0;artworkReceiving=w==240&&h==240&&bytes==sizeof(model.artwork);artworkExpected=artworkReceiving?bytes:0;artworkReceived=0;model.artworkPresent=false;}
     else if(!strcmp(type,"artwork_chunk")&&artworkReceiving){size_t offset=d["offset"]|size_t(-1);const char*encoded=d["data"]|"";if(offset!=artworkReceived||offset>=artworkExpected){artworkReceiving=false;continue;}size_t written=decodeBase64(encoded,model.artwork+offset,artworkExpected-offset);if(!written){artworkReceiving=false;continue;}artworkReceived+=written;}
     else if(!strcmp(type,"artwork_end")){model.artworkPresent=artworkReceiving&&artworkReceived==artworkExpected;artworkReceiving=false;dirty=true;}
     else if(!strcmp(type,"artwork_clear")){artworkReceiving=false;model.artworkPresent=false;dirty=true;}

@@ -377,9 +377,10 @@ class MusicNotificationListener : NotificationListenerService() {
             ?: if (YandexLikes.isYandex(controller.packageName)) notificationArtwork(controller.packageName) else null
         val artworkUri = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_ART_URI)
-        val yandexTrackId = if (YandexLikes.isYandex(controller.packageName))
-            YandexTrackMatcher.mediaId(track(controller).mediaId) else null
-        val yandexAccess = if (yandexTrackId != null) YandexAccountStore.get(this).read()?.access else null
+        val yandexTrack = track(controller)
+        val isYandexPlayer = YandexLikes.isYandex(controller.packageName)
+        val yandexTrackId = if (isYandexPlayer) YandexTrackMatcher.mediaId(yandexTrack.mediaId) else null
+        val yandexAccess = if (isYandexPlayer) YandexAccountStore.get(this).read()?.access else null
         PlayerSnapshot.title = title.take(80)
         PlayerSnapshot.artist = artist.take(80)
         PlayerSnapshot.album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: ""
@@ -401,15 +402,17 @@ class MusicNotificationListener : NotificationListenerService() {
             PlayerSnapshot.artwork = artwork
             PlayerSnapshot.artworkRevision++
         } else if (artwork == null && PlayerSnapshot.artwork == null &&
-            (!artworkUri.isNullOrBlank() || (yandexTrackId != null && yandexAccess != null)) &&
+            (!artworkUri.isNullOrBlank() || (isYandexPlayer && title.isNotBlank() && artist.isNotBlank())) &&
             artworkLoadingKey != artworkKey && SystemClock.elapsedRealtime() >= artworkRetryAt) {
             artworkLoadingKey = artworkKey
             val token = controller.sessionToken
             artworkExecutor.execute {
                 val loaded = runCatching {
                     ArtworkLoader.load(this, artworkUri.orEmpty()) ?: run {
-                        val coverUri = if (yandexTrackId != null && yandexAccess != null)
-                            YandexMusicApi().coverUri(yandexAccess, yandexTrackId) else null
+                        val coverUri = if (isYandexPlayer)
+                            YandexMusicApi().coverUriForTrack(yandexAccess, yandexTrack.mediaId, title, artist,
+                                metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty(),
+                                metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L) else null
                         if (coverUri != null) ArtworkLoader.load(this, coverUri) else null
                     }
                 }.getOrNull()

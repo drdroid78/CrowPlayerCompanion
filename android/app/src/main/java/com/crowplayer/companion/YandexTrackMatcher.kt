@@ -8,9 +8,15 @@ internal object YandexTrackMatcher {
     fun mediaId(value: String?): String? {
         val raw = value?.trim() ?: return null
         if (raw.matches(Regex("[0-9]+(:[0-9]+)?"))) return raw.substringBefore(':')
+        Regex("(?:^|[/:])track[/:]([0-9]+)(?:$|[/:?#])", RegexOption.IGNORE_CASE)
+            .find(raw)?.groupValues?.get(1)?.let { return it }
         return try {
             val uri = URI(raw)
-            if (uri.scheme !in setOf("https", "http") || uri.host !in setOf("music.yandex.ru", "music.yandex.com", "music.yandex.by", "music.yandex.kz")) null
+            val host = uri.host?.lowercase(Locale.ROOT).orEmpty()
+            val isYandexMusicHost = listOf("ru", "com", "by", "kz").any { suffix ->
+                host == "music.yandex.$suffix" || host.endsWith(".music.yandex.$suffix")
+            }
+            if (uri.scheme !in setOf("https", "http") || !isYandexMusicHost) null
             else Regex("/(?:album/[0-9]+/)?track/([0-9]+)/?").matchEntire(uri.path)?.groupValues?.get(1)
         } catch (_: Exception) { null }
     }

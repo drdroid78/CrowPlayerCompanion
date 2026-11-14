@@ -185,6 +185,65 @@ internal class YandexMusicApi(private val transport: YandexTransport = YandexHtt
         return if (sized.startsWith("https://")) sized else "https://$sized"
     }
 
+
+    /** Resolve cover art even when the Yandex player does not publish a numeric media ID. */
+    fun coverUriForTrack(token: String?, mediaId: String?, title: String, artist: String,
+                         album: String, durationMs: Long): String? {
+        val id = YandexTrackMatcher.mediaId(mediaId)
+        if (id != null) return coverUriWithOptionalToken(token, id)
+        if (title.isBlank() || artist.isBlank()) return null
+
+        val response = transport.execute(YandexHttpRequest("api.music.yandex.net", "/search",
+            fields = mapOf("type" to "track", "page" to "0", "text" to "$artist $title"), token = token))
+        val tracks = response.optJSONObject("result")?.optJSONObject("tracks")?.optJSONArray("results") ?: return null
+        val wantedTitle = normalizeCoverText(title)
+        val wantedArtist = normalizeCoverText(artist)
+        val matches = (0 until tracks.length()).mapNotNull { index ->
+            val item = tracks.optJSONObject(index) ?: return@mapNotNull null
+            if (normalizeCoverText(item.optString("title")) != wantedTitle) return@mapNotNull null
+            val artists = item.optJSONArray("artists") ?: JSONArray()
+            val itemArtist = normalizeCoverText((0 until artists.length()).joinToString(", ") {
+                artists.optJSONObject(it)?.optString("name").orEmpty()
+            })
+            if (itemArtist != wantedArtist) return@mapNotNull null
+            val itemDuration = item.optLong("durationMs")
+            if (durationMs > 0 && itemDuration > 0 && kotlin.math.abs(durationMs - itemDuration) > 2500L)
+                return@mapNotNull null
+            val albums = item.optJSONArray("albums") ?: JSONArray()
+            val itemAlbum = if (albums.length() > 0) albums.optJSONObject(0)?.optString("title").orEmpty() else ""
+            val albumMatches = album.isBlank() || itemAlbum.isBlank() || normalizeCoverText(album) == normalizeCoverText(itemAlbum)
+            Triple(item, albumMatches, itemDuration)
+        }.sortedWith(compareByDescending<Triple<JSONObject, Boolean, Long>> { it.second }
+            .thenBy { if (durationMs > 0 && it.third > 0) kotlin.math.abs(durationMs - it.third) else Long.MAX_VALUE })
+        val selected = matches.firstOrNull()?.first ?: return null
+        val albums = selected.optJSONArray("albums") ?: JSONArray()
+        val uri = selected.optString("coverUri").ifBlank {
+            if (albums.length() > 0) albums.optJSONObject(0)?.optString("coverUri").orEmpty() else ""
+        }.takeIf { it.isNotBlank() } ?: return null
+        return imageUrl(uri)
+    }
+
+    private fun coverUriWithOptionalToken(token: String?, trackId: String): String? {
+        if (token != null) return coverUri(token, trackId)
+        if (!trackId.matches(Regex("[0-9]+"))) return null
+        val tracks = transport.execute(YandexHttpRequest("api.music.yandex.net", "/tracks", "POST",
+            mapOf("track-ids" to trackId))).optJSONArray("result") ?: return null
+        val track = tracks.optJSONObject(0) ?: return null
+        val albums = track.optJSONArray("albums") ?: JSONArray()
+        val uri = track.optString("coverUri").ifBlank {
+            if (albums.length() > 0) albums.optJSONObject(0)?.optString("coverUri").orEmpty() else ""
+        }.takeIf { it.isNotBlank() } ?: return null
+        return imageUrl(uri)
+    }
+
+    private fun imageUrl(uri: String): String {
+        val sized = uri.replace("%%", "400x400")
+        return if (sized.startsWith("https://")) sized else "https://$sized"
+    }
+
+    private fun normalizeCoverText(value: String) = value.lowercase()
+        .replace('ё', 'е').replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+
     private fun get(path: String, token: String, fields: Map<String, String> = emptyMap()) =
         transport.execute(YandexHttpRequest("api.music.yandex.net", path, fields = fields, token = token))
 }

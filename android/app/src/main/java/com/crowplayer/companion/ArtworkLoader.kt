@@ -11,10 +11,11 @@ import java.net.URL
 /** Loads the artwork URI published by a media session, off the main thread. */
 internal object ArtworkLoader {
     fun load(context: Context, value: String): Bitmap? {
-        val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
+        val normalized = value.replace("%%", "400x400")
+        val uri = runCatching { Uri.parse(normalized) }.getOrNull() ?: return null
         return when (uri.scheme?.lowercase()) {
             "content", "android.resource" -> context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
-            "https" -> loadYandexHttps(value)
+            "https" -> loadYandexHttps(normalized)
             else -> null
         }
     }

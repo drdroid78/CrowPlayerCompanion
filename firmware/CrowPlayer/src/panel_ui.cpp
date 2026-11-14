@@ -6,7 +6,7 @@ const Theme themes[8]={{"Tornado Red",0xC81A26},{"Lapiz Blue",0x1F5FA8},{"Reflex
 static lv_obj_t*root;static uint32_t accent;
 static lv_color_t col(uint32_t x){return lv_color_hex(x);}
 static lv_image_dsc_t coverImage;
-static void cover(const Model&m){if(!m.artworkPresent)return;coverImage={};coverImage.header.magic=LV_IMAGE_HEADER_MAGIC;coverImage.header.cf=LV_COLOR_FORMAT_RGB565;coverImage.header.w=96;coverImage.header.h=96;coverImage.header.stride=96*2;coverImage.data_size=96*96*2;coverImage.data=m.artwork;auto*img=lv_image_create(root);lv_image_set_src(img,&coverImage);lv_image_set_scale(img,640);lv_obj_set_pos(img,72,72);}
+static void cover(const Model&m){if(!m.artworkPresent)return;coverImage={};coverImage.header.magic=LV_IMAGE_HEADER_MAGIC;coverImage.header.cf=LV_COLOR_FORMAT_RGB565;coverImage.header.w=240;coverImage.header.h=240;coverImage.header.stride=240*2;coverImage.data_size=240*240*2;coverImage.data=m.artwork;auto*img=lv_image_create(root);lv_image_set_src(img,&coverImage);lv_image_set_scale(img,256);lv_obj_set_pos(img,0,0);}
 static lv_obj_t* label(const char*s,int x,int y,int w,const lv_font_t*f=&cp_font_14,uint32_t c=0xF5F5F5){
   auto*l=lv_label_create(root);lv_obj_set_size(l,w,f->line_height);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
 }

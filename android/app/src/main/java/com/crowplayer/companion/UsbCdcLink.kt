@@ -33,6 +33,7 @@ class UsbCdcLink(
         private const val CDC_SET_LINE_CODING = 0x20
         private const val CDC_SET_CONTROL_LINE_STATE = 0x22
         private const val MAX_LINE_BYTES = 2047
+        private const val ARTWORK_SIZE = 240
     }
 
     private val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -321,11 +322,11 @@ class UsbCdcLink(
                     val readable = if (bitmap.config == Bitmap.Config.HARDWARE)
                         bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: return@execute
                     else bitmap
-                    val scaled = if (readable.width == 96 && readable.height == 96) readable
-                        else Bitmap.createScaledBitmap(readable, 96, 96, true)
+                    val scaled = if (readable.width == ARTWORK_SIZE && readable.height == ARTWORK_SIZE) readable
+                        else Bitmap.createScaledBitmap(readable, ARTWORK_SIZE, ARTWORK_SIZE, true)
                     val raw = try {
-                        val pixels = IntArray(96 * 96)
-                        scaled.getPixels(pixels, 0, 96, 0, 0, 96, 96)
+                        val pixels = IntArray(ARTWORK_SIZE * ARTWORK_SIZE)
+                        scaled.getPixels(pixels, 0, ARTWORK_SIZE, 0, 0, ARTWORK_SIZE, ARTWORK_SIZE)
                         ByteArray(pixels.size * 2).also { bytes ->
                             for (i in pixels.indices) {
                                 val color = pixels[i]
@@ -341,7 +342,7 @@ class UsbCdcLink(
                     }
                     val chunks = (raw.size + 899) / 900
                     if (!writeBytes(conn, endpoint, line(JSONObject().put("v", 1).put("type", "artwork_start")
-                            .put("width", 96).put("height", 96).put("bytes", raw.size).put("chunks", chunks)))) return@execute
+                            .put("width", ARTWORK_SIZE).put("height", ARTWORK_SIZE).put("bytes", raw.size).put("chunks", chunks)))) return@execute
                     var offset = 0
                     while (offset < raw.size && connection === conn) {
                         val length = minOf(900, raw.size - offset)
