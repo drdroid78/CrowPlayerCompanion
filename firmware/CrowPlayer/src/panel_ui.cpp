@@ -52,7 +52,7 @@ static void heart(bool liked){label(liked?"♥":"♡",169,27,30,&cp_font_18,like
 static void settingsText(const Model&m,int key,char*out,size_t n){auto&s=m.settings;switch(key){case 0:snprintf(out,n,"%02u:00",s.dayHour);break;case 1:snprintf(out,n,"%02u:00",s.nightHour);break;case 2:snprintf(out,n,"%u%%",s.dayLight);break;case 3:snprintf(out,n,"%u%%",s.nightLight);break;case 4:snprintf(out,n,"%u%%",s.dayLed);break;case 5:snprintf(out,n,"%u%%",s.nightLed);break;case 6:if(s.idleSeconds)snprintf(out,n,"%u с",s.idleSeconds);else snprintf(out,n,"Выкл");break;case 7:snprintf(out,n,"%s",s.tabletVolume?"Планшет":"Усилитель");break;}}
 static int wheelY(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(120.0f+100.0f*sinf(angle)));}
 static int wheelIconX(int offset){const float angle=float(offset)*25.0f*3.14159265f/180.0f;return int(lroundf(125.0f-100.0f*cosf(angle)));}
-static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=0x050609;uint32_t ink=selected?0xF5F5F5:0xB8C0CA;
+static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=0x000000;uint32_t ink=selected?0xF5F5F5:0xB8C0CA;
   if(key==6){outlineCircle(x,y,16,ink);line(x,y,x,y-5,ink,2);line(x,y,x+4,y+2,ink,2);}
   else if(key==0){ring(x,y+4,6,180,360,ink,2);line(x-10,y+5,x+10,y+5,ink,2);line(x,y-10,x,y-8,ink,2);line(x-8,y-6,x-6,y-4,ink,2);line(x+8,y-6,x+6,y-4,ink,2);}
   else if(key==1){disc(x-2,y,8,ink);disc(x+3,y-4,8,bg);}
@@ -62,7 +62,7 @@ static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=0x050609;
   else{disc(x,y,4,ink);}
 }
 void render(const Model&m,uint32_t now){
-  if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);lv_obj_set_style_bg_color(root,col(0x050609),0);lv_obj_set_style_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lv_obj_clean(root);iconLineCount=0;accent=themes[m.settings.theme].rgb;
+  if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);lv_obj_set_style_bg_color(root,col(0x000000),0);lv_obj_set_style_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lv_obj_clean(root);iconLineCount=0;accent=themes[m.settings.theme].rgb;
   char b[160];bool ham=m.ham.online(now);
   if(m.screen==0){
     ring(120,120,103,135,405,0x252830,3);int minute=m.clock.minute();if(m.clock.epoch)ring(120,120,103,135,135+std::max(1,minute*270/1440),accent,4);
@@ -70,7 +70,7 @@ void render(const Model&m,uint32_t now){
     if(m.usbHostConnected)label("USB",40,170,160,&cp_font_14,accent);
   }else if(m.screen==1){
     cover(m);
-    auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,210,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
+    auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);lv_obj_set_style_bg_color(shade,col(0x000000),0);lv_obj_set_style_bg_opa(shade,210,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
     if(!m.artworkPresent){ring(120,89,46,0,359,accent,2);label("♫",83,56,74,&cp_font_44,accent);}
     if(m.ham.source>=0)drawSourceIcon(m.ham.source,48,36,0xF5F5F5,0.65f);
     heart(m.liked&&m.likeKnown);if(m.likePending)label("…",188,27,30,&cp_font_14,accent);
@@ -127,7 +127,7 @@ void render(const Model&m,uint32_t now){
   }
   if(m.screen==0)nav(m.screen);
   if(m.volumeOverlay){
-    auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x050609),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
+    auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x000000),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
     char value[16];int current=m.volumeOverlayValue;
     volumeRing(m.volumeOverlayTick*100/51,accent);
     if(m.settings.tabletVolume){
