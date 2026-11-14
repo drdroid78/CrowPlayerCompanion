@@ -27,6 +27,12 @@ static void volumeRing(int percent,uint32_t color){
 }
 static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(color),0);return o;}
 static void selectedRow(int y){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,14,y-18);lv_obj_set_size(o,212,36);lv_obj_set_style_radius(o,7,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);}
+static void selectedThemeRow(int y,int iconX,const char*name){
+  const int left=8,textX=iconX+19,maxText=240-iconX-38;
+  const int width=std::min<int>(maxText,lv_text_get_width(name,strlen(name),&cp_font_18,0));
+  const int right=std::min(232,textX+width+8);
+  auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,left,y-18);lv_obj_set_size(o,right-left,36);lv_obj_set_style_radius(o,7,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);
+}
 static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5,float scale=1.0f){
   auto px=[&](int v){return int(lroundf(v*scale));};
   auto L=[&](int x1,int y1,int x2,int y2){line(x+px(x1),y+px(y1),x+px(x2),y+px(y2),c,2);};
@@ -95,11 +101,10 @@ void render(const Model&m,uint32_t now){
     const int count=sourceCount(m.ham);
     for(int i=0;i<count;i++){
       const int source=sourceAt(m.ham,i);int x,y;sourcePositionForId(m.ham,i,x,y);
-      const bool active=ham&&source==m.ham.source,selected=source==m.sourceSelection;
-      if(selected&&!active)ring(x,y,23,0,359,accent,2);
-      drawSourceIcon(source,x,y-5,active?accent:0xF5F5F5,1.0f);
+      const bool selected=source==m.sourceSelection||(sourceIndex(m.ham,m.sourceSelection)<0&&ham&&source==m.ham.source);
+      drawSourceIcon(source,x,y-5,selected?accent:0xF5F5F5,1.0f);
       const char*name=sourceName(source);int w=!strcmp(name,"AUX IN")?58:42;
-      label(name,x-w/2,y+12,w,&cp_font_14,active?accent:0xF5F5F5);
+      label(name,x-w/2,y+12,w,&cp_font_14,selected?accent:0xF5F5F5);
     }
   }else if(m.screen==4){
     static const char* names[]={"День с","Ночь с","Ярк. дня","Ярк. ночи","LED днём","LED ночью","Тайм-аут","Громкость"};
@@ -120,7 +125,7 @@ void render(const Model&m,uint32_t now){
     for(int offset=-2;offset<=2;offset++){
       int index=(int(m.settings.theme)+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
-      if(selected)selectedRow(y);
+      if(selected)selectedThemeRow(y,iconX,themes[index].name);
       disc(iconX,y,selected?8:7,themes[index].rgb);
       leftLabel(themes[index].name,iconX+19,y-9,240-iconX-38,selected?&cp_font_18:&cp_font_16,textColor);
     }
