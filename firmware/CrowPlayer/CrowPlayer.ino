@@ -233,6 +233,8 @@ static void lighting(uint32_t now){
 }
 void setup(){
   bootStage="artwork-psram";if(psramFound())model.artwork=(uint8_t*)ps_malloc(ARTWORK_BYTES);
+  // Keep the active-high backlight off before enabling the display supply.
+  pinMode(46,OUTPUT);digitalWrite(46,LOW);
   pinMode(1,OUTPUT);digitalWrite(1,HIGH);pinMode(2,OUTPUT);digitalWrite(2,HIGH);pinMode(40,OUTPUT);digitalWrite(40,LOW);
   tablet.begin(115200);consumerControl.begin();USB.manufacturerName("DrDroid78");USB.productName("CrowPanel Skoda Edition");USB.begin();
   xTaskCreate(bootMonitor,"boot-monitor",3072,nullptr,1,nullptr);
@@ -242,7 +244,9 @@ void setup(){
   if(settingsVersion==2&&storedSettingsSize==sizeof(cp::Settings)){cp::Settings s;prefs.getBytes("settings",&s,sizeof s);if(s.valid())model.settings=s;}
   else if(settingsVersion==1&&storedSettingsSize==sizeof(LegacySettingsV1)){LegacySettingsV1 old{};prefs.getBytes("settings",&old,sizeof old);model.settings.theme=old.theme;model.settings.dayHour=old.dayHour;model.settings.nightHour=old.nightHour;model.settings.dayLight=old.dayLight;model.settings.nightLight=old.nightLight;model.settings.dayLed=old.dayLed;model.settings.nightLed=old.nightLed;model.settings.idleSeconds=old.idleSeconds;if(model.settings.valid()){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);}}
   brightness=model.settings.dayLight;
-  bootStage="lcd-init";displayOk=lcd.init();lcd.setBrightness(0);
+  // LovyanGFX reapplies its stored brightness at the end of init(). Set it
+  // first so initialisation cannot briefly illuminate the display.
+  bootStage="lcd-init";lcd.setBrightness(0);displayOk=lcd.init();
   bootStage="led-init";leds.begin();leds.fill(leds.Color(0,0,12));leds.show();
   bootStage="touch-init";
   pinMode(5,OUTPUT);digitalWrite(5,HIGH);delay(1);digitalWrite(5,LOW);delay(1);
@@ -257,8 +261,8 @@ void setup(){
   // The asset stores native RGB565 words; select the explicit LovyanGFX
   // type so pushImage does not interpret them as byte-swapped pixels.
   lcd.pushImage(0,0,240,240,reinterpret_cast<const lgfx::rgb565_t*>(CROWPANEL_SPLASH_RGB565));
-  splashShownAt=millis();splashActive=true;
-  if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}lastTick=millis();model.activeAt=lastTick;
+  if(strlen(CROWPLAYER_WIFI_SSID)){WiFi.mode(WIFI_STA);WiFi.begin(CROWPLAYER_WIFI_SSID,CROWPLAYER_WIFI_PASSWORD);}
+  splashShownAt=millis();splashActive=true;lastTick=splashShownAt;model.activeAt=lastTick;
 }
 void loop(){
   loopCount++;bootStage="input";uint32_t now=millis();lv_tick_inc(now-lastTick);lastTick=now;model.clock.advance(now);
@@ -273,7 +277,7 @@ void loop(){
   tabletVolumeTick(now);
   auto event=button.update(encoderPressed,now);if(event!=cp::ButtonEvent::None){touchBlockedUntil=now+450;bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){model.screen=1;model.edit=false;dirty=true;}else if(model.screen==3){if(event==cp::ButtonEvent::Single&&model.sourceSelection>=0)setHam(1,model.sourceSelection);else if(event==cp::ButtonEvent::Hold){model.screen=1;dirty=true;}}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(event==cp::ButtonEvent::Hold)media("previous");}}
   if(!model.playing&&model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
-  if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);settingsDirty=false;}lighting(now);
+  if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);settingsDirty=false;}lighting(millis());
   const uint32_t renderInterval=model.volumeOverlay?180:60;
   if(splashActive&&uint32_t(now-splashShownAt)>=cp::splashDurationMs){splashActive=false;panelRevealing=true;panelRevealAt=now;dirty=true;}
   if(!splashActive){if((dirty&&now-lastRender>renderInterval)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();}bootStage="running";
