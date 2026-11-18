@@ -24,6 +24,15 @@ static void ui_line_color(lv_obj_t*o,lv_color_t value,lv_style_selector_t select
 static void ui_line_width(lv_obj_t*o,int32_t value,lv_style_selector_t selector){lv_style_value_t old;if(lv_obj_get_local_style_prop(o,LV_STYLE_LINE_WIDTH,&old,selector)==LV_RESULT_OK&&(old.num==value))return;lv_style_value_t next{};next.num=value;lv_obj_set_local_style_prop(o,LV_STYLE_LINE_WIDTH,next,selector);}
 static void ui_line_rounded(lv_obj_t*o,int32_t value,lv_style_selector_t selector){lv_style_value_t old;if(lv_obj_get_local_style_prop(o,LV_STYLE_LINE_ROUNDED,&old,selector)==LV_RESULT_OK&&(old.num==value))return;lv_style_value_t next{};next.num=value;lv_obj_set_local_style_prop(o,LV_STYLE_LINE_ROUNDED,next,selector);}
 
+static void uiRemoveFlag(lv_obj_t*o,lv_obj_flag_t flags){
+  uint32_t changed=0;for(uint32_t bit=1;bit;bit<<=1)if((uint32_t(flags)&bit)&&lv_obj_has_flag(o,lv_obj_flag_t(bit)))changed|=bit;
+  if(changed)lv_obj_remove_flag(o,lv_obj_flag_t(changed));
+}
+static void uiAddFlag(lv_obj_t*o,lv_obj_flag_t flags){
+  uint32_t changed=0;for(uint32_t bit=1;bit;bit<<=1)if((uint32_t(flags)&bit)&&!lv_obj_has_flag(o,lv_obj_flag_t(bit)))changed|=bit;
+  if(changed)lv_obj_add_flag(o,lv_obj_flag_t(changed));
+}
+
 enum class Kind { Disc, Outline, Row, ThemeRow, Shade, Label, Arc, Line, Image, Ramp };
 struct Node {lv_obj_t* obj;Kind kind;std::string text;};
 static std::vector<Node> nodes;
@@ -40,7 +49,7 @@ static lv_obj_t* object(Kind kind){
     lv_obj_t* o=nullptr;
     switch(kind){case Kind::Label:o=lv_label_create(root);break;case Kind::Arc:o=lv_arc_create(root);break;case Kind::Line:o=lv_line_create(root);break;case Kind::Image:o=lv_image_create(root);break;default:o=lv_obj_create(root);break;}
     if(kind!=Kind::Label&&kind!=Kind::Image)lv_obj_remove_style_all(o);
-    lv_obj_remove_flag(o,LV_OBJ_FLAG_SCROLLABLE);
+    uiRemoveFlag(o,LV_OBJ_FLAG_SCROLLABLE);
     nodes.push_back({o,kind,{}});allocations++;freshObject=true;
   }
   return nodes[cursor++].obj;
@@ -66,7 +75,7 @@ case 0x252830:case 0x252C35:case 0x35404A:case 0x303743:case 0x41454D:case 0x464
 case 0xA5A9AF:case 0x9399A2:case 0xAEB4BD:case 0xA0A5AD:case 0xB8C0CA:case 0xB8CBD3:case 0xD0D2D5:x=0x4A4A4A;break;
 }}return lv_color_hex(x);}
 static lv_image_dsc_t coverImage;
-static void cover(const Model&m){if(!m.artworkPresent||!m.artwork)return;coverImage={};coverImage.header.magic=LV_IMAGE_HEADER_MAGIC;coverImage.header.cf=LV_COLOR_FORMAT_RGB565;coverImage.header.w=240;coverImage.header.h=240;coverImage.header.stride=240*2;coverImage.data_size=240*240*2;coverImage.data=m.artwork;auto*img=object(Kind::Image);if(uintptr_t(lv_obj_get_user_data(img))!=uintptr_t(m.artworkRevision)+1){lv_image_set_src(img,&coverImage);lv_obj_invalidate(img);lv_obj_set_user_data(img,reinterpret_cast<void*>(uintptr_t(m.artworkRevision)+1));}lv_image_set_scale(img,256);lv_obj_set_pos(img,0,0);}
+static void cover(const Model&m){if(!m.artworkPresent||!m.artwork)return;coverImage={};coverImage.header.magic=LV_IMAGE_HEADER_MAGIC;coverImage.header.cf=LV_COLOR_FORMAT_RGB565;coverImage.header.w=240;coverImage.header.h=240;coverImage.header.stride=240*2;coverImage.data_size=240*240*2;coverImage.data=m.artwork;auto*img=object(Kind::Image);if(uintptr_t(lv_obj_get_user_data(img))!=uintptr_t(m.artworkRevision)+1){lv_image_set_src(img,&coverImage);lv_obj_invalidate(img);lv_obj_set_user_data(img,reinterpret_cast<void*>(uintptr_t(m.artworkRevision)+1));}if(freshObject)lv_image_set_scale(img,256);lv_obj_set_pos(img,0,0);}
 static lv_obj_t* label(const char*s,int x,int y,int w,const lv_font_t*f=&cp_font_14,uint32_t c=0xF5F5F5){
   auto*l=object(Kind::Label);lv_obj_set_size(l,w,fontFor(f)->line_height);lv_obj_set_pos(l,x,y);f=fontFor(f);ui_text_font(l,f,0);ui_text_color(l,col(c),0);ui_text_align(l,LV_TEXT_ALIGN_CENTER,0);if(lv_label_get_long_mode(l)!=LV_LABEL_LONG_DOT)lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);text(l,s);return l;
 }
@@ -75,7 +84,7 @@ static lv_obj_t* leftLabel(const char*s,int x,int y,int w,const lv_font_t*f,uint
 }
 static void disc(int x,int y,int r,uint32_t c){auto*o=object(Kind::Disc);lv_obj_set_pos(o,x-r,y-r);lv_obj_set_size(o,2*r,2*r);ui_radius(o,LV_RADIUS_CIRCLE,0);ui_bg_color(o,col(c),0);ui_bg_opa(o,LV_OPA_COVER,0);}
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
-  auto*a=object(Kind::Arc);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);lv_arc_set_bg_angles(a,start,end);ui_arc_width(a,width,LV_PART_MAIN);ui_arc_color(a,col(c),LV_PART_MAIN);ui_arc_rounded(a,true,LV_PART_MAIN);ui_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);lv_obj_remove_flag(a,LV_OBJ_FLAG_CLICKABLE);
+  auto*a=object(Kind::Arc);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);if(lv_arc_get_bg_start_angle(a)!=(start>360?start-360:start)||lv_arc_get_bg_end_angle(a)!=(end>360?end-360:end))lv_arc_set_bg_angles(a,start,end);ui_arc_width(a,width,LV_PART_MAIN);ui_arc_color(a,col(c),LV_PART_MAIN);ui_arc_rounded(a,true,LV_PART_MAIN);ui_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);uiRemoveFlag(a,LV_OBJ_FLAG_CLICKABLE);
 }
 static lv_point_precise_t iconLines[192][2];static uint8_t iconLineCount=0;
 static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){
@@ -83,7 +92,7 @@ static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2
   const bool moved=pts[0].x!=x1||pts[0].y!=y1||pts[1].x!=x2||pts[1].y!=y2;
   auto*l=object(Kind::Line);
   if(moved||freshObject||reinterpret_cast<lv_line_t*>(l)->point_array!=pts){pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};lv_line_set_points(l,pts,2);}
-  ui_line_color(l,col(color),0);ui_line_width(l,width,0);ui_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);
+  ui_line_color(l,col(color),0);ui_line_width(l,width,0);ui_line_rounded(l,true,0);uiRemoveFlag(l,LV_OBJ_FLAG_CLICKABLE);
 }
 static int rampPercent=-1;
 // Geometry adapted from TrailCurrentGodwit face.c (MIT); see third-party notice.
@@ -113,12 +122,12 @@ static void volumeRing(int percent,uint32_t color){
   if(percent>0)ring(120,120,radius,start,start+std::max(2,percent*sweep/100),color,width);
 }
 static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=object(Kind::Outline);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);ui_radius(o,LV_RADIUS_CIRCLE,0);ui_bg_opa(o,LV_OPA_TRANSP,0);ui_border_width(o,1,0);ui_border_color(o,col(color),0);return o;}
-static void selectedRow(int y){auto*o=object(Kind::Row);lv_obj_set_pos(o,14,y-18);lv_obj_set_size(o,212,36);ui_radius(o,7,0);ui_bg_opa(o,LV_OPA_TRANSP,0);ui_border_width(o,1,0);ui_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);}
+static void selectedRow(int y){auto*o=object(Kind::Row);lv_obj_set_pos(o,14,y-18);lv_obj_set_size(o,212,36);ui_radius(o,7,0);ui_bg_opa(o,LV_OPA_TRANSP,0);ui_border_width(o,1,0);ui_border_color(o,col(accent),0);uiRemoveFlag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);}
 static void selectedThemeRow(int y,int iconX,const char*name){
   const int left=8,textX=iconX+19,maxText=240-iconX-38;
   const int width=std::min<int>(maxText,lv_text_get_width(name,strlen(name),fontFor(&cp_font_18),0));
   const int right=std::min(232,textX+width+8);
-  auto*o=object(Kind::ThemeRow);lv_obj_set_pos(o,left,y-18);lv_obj_set_size(o,right-left,36);ui_radius(o,7,0);ui_bg_opa(o,LV_OPA_TRANSP,0);ui_border_width(o,1,0);ui_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);
+  auto*o=object(Kind::ThemeRow);lv_obj_set_pos(o,left,y-18);lv_obj_set_size(o,right-left,36);ui_radius(o,7,0);ui_bg_opa(o,LV_OPA_TRANSP,0);ui_border_width(o,1,0);ui_border_color(o,col(accent),0);uiRemoveFlag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);
 }
 static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5,float scale=1.0f){
   auto px=[&](int v){return int(lroundf(v*scale));};
@@ -155,7 +164,7 @@ static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=0x000000;
   else{disc(x,y,4,ink);}
 }
 void render(const Model&m,uint32_t now){
-  if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);ui_bg_color(root,col(0x000000),0);ui_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lightTheme=m.settings.theme==8;photoIcons=lightTheme&&m.screen==1&&m.artworkPresent;
+  if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);ui_bg_color(root,col(0x000000),0);ui_bg_opa(root,LV_OPA_COVER,0);uiRemoveFlag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lightTheme=m.settings.theme==8;photoIcons=lightTheme&&m.screen==1&&m.artworkPresent;
   if(activeScreen!=m.screen||activeTheme!=m.settings.theme||activeOverlay!=m.volumeOverlay){trim(0);activeScreen=m.screen;activeTheme=m.settings.theme;activeOverlay=m.volumeOverlay;}
   cursor=0;iconLineCount=0;accent=themes[m.settings.theme].rgb;
   ui_bg_color(root,col(0x000000),0);
@@ -166,7 +175,7 @@ void render(const Model&m,uint32_t now){
     if(m.usbHostConnected)label("USB",40,170,160,&cp_font_14,accent);
   }else if(m.screen==1){
     cover(m);
-    auto*shade=object(Kind::Shade);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);ui_bg_color(shade,col(0x000000),0);ui_bg_opa(shade,210,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
+    auto*shade=object(Kind::Shade);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);ui_bg_color(shade,col(0x000000),0);ui_bg_opa(shade,210,0);uiRemoveFlag(shade,LV_OBJ_FLAG_SCROLLABLE);
     if(!m.artworkPresent){ring(120,89,46,0,359,accent,2);label("♫",83,56,74,&cp_font_44,accent);}
     if(m.ham.source>=0)drawSourceIcon(m.ham.source,48,36,photoIcons?0xFFFFFF:0xF5F5F5,0.65f);
     heart(m.liked&&m.likeKnown);if(m.likePending)label("…",188,27,30,&cp_font_14,accent);
@@ -223,7 +232,7 @@ void render(const Model&m,uint32_t now){
   if(m.screen==0)nav(m.screen);
   const size_t baseEnd=cursor;
   if(m.volumeOverlay){
-    auto*shade=object(Kind::Shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);ui_bg_color(shade,col(0x000000),0);ui_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
+    auto*shade=object(Kind::Shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);ui_bg_color(shade,col(0x000000),0);ui_bg_opa(shade,LV_OPA_COVER,0);uiRemoveFlag(shade,LV_OBJ_FLAG_SCROLLABLE);
     char value[16];int current=m.volumeOverlayValue;
     volumeRing(m.volumeOverlayTick*100/51,accent);
     if(m.settings.tabletVolume){
@@ -238,7 +247,7 @@ void render(const Model&m,uint32_t now){
       if(lightTheme)label(m.volumeOverlaySub?"Усилитель":"Усилитель",35,158,170,&cp_font_16,0xB8CBD3);else if(!m.volumeOverlaySub)label("%",80,150,80,&cp_font_16,0xB8CBD3);
     }else{label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
   }
-  for(size_t i=0;i<baseEnd;i++){if(m.volumeOverlay)lv_obj_add_flag(nodes[i].obj,LV_OBJ_FLAG_HIDDEN);else lv_obj_remove_flag(nodes[i].obj,LV_OBJ_FLAG_HIDDEN);}
+  for(size_t i=0;i<baseEnd;i++){if(m.volumeOverlay)uiAddFlag(nodes[i].obj,LV_OBJ_FLAG_HIDDEN);else uiRemoveFlag(nodes[i].obj,LV_OBJ_FLAG_HIDDEN);}
   trim(cursor);
 }
 }

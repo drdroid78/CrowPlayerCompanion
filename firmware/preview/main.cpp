@@ -32,7 +32,7 @@ int main(int argc,char**argv){
     const uint64_t beforePixels=writtenPixels;
     cp::render(m,now);lv_refr_now(nullptr);
     if(cp::uiAllocations()!=allocations)throw std::runtime_error("Steady frame allocated UI objects");
-    if(writtenPixels!=beforePixels)throw std::runtime_error("Unchanged frame flushed pixels");
+    if(writtenPixels!=beforePixels)throw std::runtime_error("Unchanged frame flushed pixels on screen "+std::to_string(screen));
     std::vector<uint16_t> retained(pixels,pixels+240*240);
     cp::resetUI();cp::render(m,now);lv_refr_now(nullptr);
     if(!std::equal(retained.begin(),retained.end(),pixels))throw std::runtime_error("Retained/fresh render mismatch");
