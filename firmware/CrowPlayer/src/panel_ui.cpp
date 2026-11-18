@@ -84,7 +84,7 @@ static lv_obj_t* leftLabel(const char*s,int x,int y,int w,const lv_font_t*f,uint
 }
 static void disc(int x,int y,int r,uint32_t c){auto*o=object(Kind::Disc);lv_obj_set_pos(o,x-r,y-r);lv_obj_set_size(o,2*r,2*r);ui_radius(o,LV_RADIUS_CIRCLE,0);ui_bg_color(o,col(c),0);ui_bg_opa(o,LV_OPA_COVER,0);}
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
-  auto*a=object(Kind::Arc);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);if(lv_arc_get_bg_start_angle(a)!=(start>360?start-360:start)||lv_arc_get_bg_end_angle(a)!=(end>360?end-360:end))lv_arc_set_bg_angles(a,start,end);ui_arc_width(a,width,LV_PART_MAIN);ui_arc_color(a,col(c),LV_PART_MAIN);ui_arc_rounded(a,true,LV_PART_MAIN);ui_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);uiRemoveFlag(a,LV_OBJ_FLAG_CLICKABLE);
+  auto*a=object(Kind::Arc);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);if(lv_arc_get_bg_angle_start(a)!=(start>360?start-360:start)||lv_arc_get_bg_angle_end(a)!=(end>360?end-360:end))lv_arc_set_bg_angles(a,start,end);ui_arc_width(a,width,LV_PART_MAIN);ui_arc_color(a,col(c),LV_PART_MAIN);ui_arc_rounded(a,true,LV_PART_MAIN);ui_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);uiRemoveFlag(a,LV_OBJ_FLAG_CLICKABLE);
 }
 static lv_point_precise_t iconLines[192][2];static uint8_t iconLineCount=0;
 static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){
