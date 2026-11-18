@@ -1,6 +1,8 @@
 // Copyright (c) 2026 DrDroid78. Author: DrDroid78.
 // Native USB companion + inverted 1.8 V Hellion UART (external level shifter).
 #include <Arduino.h>
+#include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
 #include <LovyanGFX.hpp>
 #include <lvgl.h>
 #include <ArduinoJson.h>
@@ -43,7 +45,24 @@ static int tabletVolumeScaleTick=26;
 static int volumeLedSlot=0;
 static bool artworkReceiving=false;static size_t artworkExpected=0,artworkReceived=0;
 static constexpr size_t ARTWORK_BYTES=240*240*2;
-alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBuffer[240*40];
+alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBufferA[240*40];
+alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBufferB[240*40];
+#ifndef CROWPANEL_SYNC_DISPLAY
+#define CROWPANEL_SYNC_DISPLAY 0
+#endif
+// Totals are diagnostic observations, not a claimed FPS benchmark.
+static volatile uint32_t renderUs=0,renderMaxUs=0,renderCount=0;
+static volatile uint32_t transferUs=0,transferMaxUs=0,transferPixels=0;
+static lv_display_t*dispForFlush=nullptr;
+static uint32_t transferStarted=0;static bool transferPending=false;
+static void finishFlush(lv_display_t*display){
+  if(!transferPending)return;
+  lcd.waitDMA();lcd.endWrite();
+  const uint32_t elapsed=micros()-transferStarted;
+  transferUs+=elapsed;transferMaxUs=std::max(uint32_t(transferMaxUs),elapsed);
+  transferPending=false;lv_display_flush_ready(display);
+}
+
 static const char* volatile bootStage="starting";
 struct LegacySettingsV1 {uint8_t theme,dayHour,nightHour,dayLight,nightLight,dayLed,nightLed;uint16_t idleSeconds;};
 static_assert(sizeof(LegacySettingsV1)==10,"Unexpected legacy settings layout");
@@ -52,7 +71,8 @@ static volatile bool displayOk=false;
 static volatile uint32_t hamBytes=0,hamReports=0;
 static void bootMonitor(void*){
   // A separate task can report a stalled setup without using the amplifier UART.
-  for(;;){if(millis()<120000 && tablet){char b[320];int n=snprintf(b,sizeof b,"{\"v\":1,\"type\":\"diag\",\"stage\":\"%s\",\"ms\":%lu,\"heap\":%u,\"lcd\":%s,\"flushes\":%lu,\"loops\":%lu,\"hamRxBytes\":%lu,\"hamReports\":%lu,\"hamOnline\":%s,\"hamVolume\":%d,\"encoderSteps\":%ld}\n",bootStage,(unsigned long)millis(),ESP.getFreeHeap(),displayOk?"true":"false",(unsigned long)flushCount,(unsigned long)loopCount,(unsigned long)hamBytes,(unsigned long)hamReports,model.ham.online(millis())?"true":"false",model.ham.volume,(long)encoderSteps);tablet.write((const uint8_t*)b,n);}vTaskDelay(pdMS_TO_TICKS(2000));}
+  for(;;){if(millis()<120000 && tablet){char b[640];int n=snprintf(b,sizeof b,"{\"v\":1,\"type\":\"diag\",\"stage\":\"%s\",\"ms\":%lu,\"heap\":%u,\"lcd\":%s,\"flushes\":%lu,\"loops\":%lu,\"hamRxBytes\":%lu,\"hamReports\":%lu,\"hamOnline\":%s,\"hamVolume\":%d,\"encoderSteps\":%ld}\n",bootStage,(unsigned long)millis(),ESP.getFreeHeap(),displayOk?"true":"false",(unsigned long)flushCount,(unsigned long)loopCount,(unsigned long)hamBytes,(unsigned long)hamReports,model.ham.online(millis())?"true":"false",model.ham.volume,(long)encoderSteps);tablet.write((const uint8_t*)b,n);
+    char perf[512];int pn=snprintf(perf,sizeof perf,"{\"v\":1,\"type\":\"perf\",\"renderCount\":%lu,\"renderUs\":%lu,\"renderMaxUs\":%lu,\"flushUs\":%lu,\"flushMaxUs\":%lu,\"pixels\":%lu,\"uiAllocations\":%lu,\"sync\":%s}\n",(unsigned long)renderCount,(unsigned long)renderUs,(unsigned long)renderMaxUs,(unsigned long)transferUs,(unsigned long)transferMaxUs,(unsigned long)transferPixels,(unsigned long)cp::uiAllocations(),CROWPANEL_SYNC_DISPLAY?"true":"false");tablet.write((const uint8_t*)perf,pn);}vTaskDelay(pdMS_TO_TICKS(2000));}
 }
 void IRAM_ATTR onEncoder(){
   uint8_t next=(digitalRead(45)<<1)|digitalRead(42);portENTER_CRITICAL_ISR(&encoderMux);
@@ -106,7 +126,7 @@ static void media(const char*action){
 }
 static int b64value(char c){if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;if(c=='+')return 62;if(c=='/')return 63;return -1;}
 static size_t decodeBase64(const char*src,uint8_t*out,size_t cap){uint32_t acc=0;int bits=0;size_t n=0;for(;*src;src++){int v=b64value(*src);if(v<0)break;acc=(acc<<6)|uint32_t(v);bits+=6;if(bits>=8){bits-=8;if(n>=cap)return 0;out[n++]=uint8_t(acc>>bits);}}return n;}
-static void editSetting(int delta){auto&s=model.settings;if(model.screen==5){s.theme=(s.theme+delta%8+8)%8;}else switch(model.setting){case 0:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 1:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 2:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 3:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 4:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 5:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 6:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;case 7:if(abs(delta)%2)s.tabletVolume=!s.tabletVolume;break;}saveLater();}
+static void editSetting(int delta){auto&s=model.settings;if(model.screen==5){s.theme=(s.theme+delta%cp::THEME_COUNT+cp::THEME_COUNT)%cp::THEME_COUNT;}else switch(model.setting){case 0:s.dayHour=(s.dayHour+delta%24+24)%24;break;case 1:s.nightHour=(s.nightHour+delta%24+24)%24;break;case 2:s.dayLight=cp::clamp(int(s.dayLight)+delta*5,5,100);break;case 3:s.nightLight=cp::clamp(int(s.nightLight)+delta*5,1,100);break;case 4:s.dayLed=cp::clamp(int(s.dayLed)+delta*5,0,100);break;case 5:s.nightLed=cp::clamp(int(s.nightLed)+delta,0,100);break;case 6:s.idleSeconds=cp::clamp(int(s.idleSeconds)+delta*15,0,600);break;case 7:if(abs(delta)%2)s.tabletVolume=!s.tabletVolume;break;}saveLater();}
 static void rotate(int delta){activity();if(model.screen==3){int count=cp::sourceCount(model.ham);int index=cp::sourceCycleIndex(model.ham,model.sourceSelection);if(index<0)index=0;model.sourceSelection=cp::sourceCycleAt(model.ham,(index+delta%count+count)%count);dirty=true;}else if(model.screen==5){editSetting(-delta);}else if(model.screen==4){if(model.edit)editSetting(delta);else{model.setting=(model.setting-delta%8+8)%8;dirty=true;}}else volume(delta);}
 static void tabletVolumeTick(uint32_t now){
   if(int32_t(now-tabletVolumeNextAt)<0)return;
@@ -145,7 +165,7 @@ static void tap(int x,int y){
     if(y>=35&&y<210){int row=(y-35)/35,offset=row-2,dy=offset*41;int inset=int(lroundf(125.0f-sqrtf(100.0f*100.0f-float(dy*dy))))-16;
       if(x>=inset&&x<236){
         if(model.screen==4){int selected=(model.setting+offset+8)%8;if(offset==0){model.edit=!model.edit;saveLater();}else{model.setting=selected;model.edit=false;}dirty=true;}
-        else{model.settings.theme=(model.settings.theme+offset+8)%8;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}
+        else{model.settings.theme=(model.settings.theme+offset+cp::THEME_COUNT)%cp::THEME_COUNT;model.setting=0;saveLater();effect=2;effectAt=millis();dirty=true;}
       }
     }
   }
@@ -186,8 +206,8 @@ static void usbReceive(uint32_t now){
     }else if(!strcmp(type,"heartbeat")){model.lastUsb=now;model.usb=true;}
     else if(!strcmp(type,"artwork_start")){uint32_t w=d["width"]|0,h=d["height"]|0;size_t bytes=d["bytes"]|0;artworkReceiving=model.artwork&&w==240&&h==240&&bytes==ARTWORK_BYTES;artworkExpected=artworkReceiving?bytes:0;artworkReceived=0;model.artworkPresent=false;}
     else if(!strcmp(type,"artwork_chunk")&&artworkReceiving){size_t offset=d["offset"]|size_t(-1);const char*encoded=d["data"]|"";if(offset!=artworkReceived||offset>=artworkExpected){artworkReceiving=false;continue;}size_t written=decodeBase64(encoded,model.artwork+offset,artworkExpected-offset);if(!written){artworkReceiving=false;continue;}artworkReceived+=written;}
-    else if(!strcmp(type,"artwork_end")){model.artworkPresent=artworkReceiving&&artworkReceived==artworkExpected;artworkReceiving=false;dirty=true;}
-    else if(!strcmp(type,"artwork_clear")){artworkReceiving=false;model.artworkPresent=false;dirty=true;}
+    else if(!strcmp(type,"artwork_end")){model.artworkPresent=artworkReceiving&&artworkReceived==artworkExpected;artworkReceiving=false;model.artworkRevision++;dirty=true;}
+    else if(!strcmp(type,"artwork_clear")){artworkReceiving=false;model.artworkPresent=false;model.artworkRevision++;dirty=true;}
     else if(!strcmp(type,"result")&&usbPendingId&&d["id"].as<uint32_t>()==usbPendingId){if(d["ok"]==true){if(model.likePending&&d["liked"].is<bool>()){model.liked=d["liked"].as<bool>();model.likeKnown=true;}notify("Подтверждено");}else notify(d["message"]|"Команда не выполнена",true);usbPendingId=0;model.likePending=false;}
   }
   // USB CDC can briefly miss host state writes while Android is busy; only age out
@@ -236,7 +256,7 @@ void setup(){
   // Keep the active-high backlight off before enabling the display supply.
   pinMode(46,OUTPUT);digitalWrite(46,LOW);
   pinMode(1,OUTPUT);digitalWrite(1,HIGH);pinMode(2,OUTPUT);digitalWrite(2,HIGH);pinMode(40,OUTPUT);digitalWrite(40,LOW);
-  tablet.begin(115200);consumerControl.begin();USB.manufacturerName("DrDroid78");USB.productName("CrewPanel");USB.begin();
+  tablet.begin(115200);consumerControl.begin();USB.manufacturerName("DrDroid78");USB.productName("CrowPanel");USB.begin();
   xTaskCreate(bootMonitor,"boot-monitor",3072,nullptr,1,nullptr);
   bootStage="encoder";
   pinMode(45,INPUT_PULLUP);pinMode(42,INPUT_PULLUP);pinMode(41,INPUT_PULLUP);encoderPrevious=(digitalRead(45)<<1)|digitalRead(42);attachInterrupt(45,onEncoder,CHANGE);attachInterrupt(42,onEncoder,CHANGE);
@@ -253,8 +273,19 @@ void setup(){
   pinMode(13,OUTPUT);digitalWrite(13,LOW);delay(10);digitalWrite(13,HIGH);delay(300);pinMode(5,INPUT_PULLUP);
   Wire1.begin(6,7,400000);Wire1.setTimeOut(10);Wire1.beginTransmission(0x15);Wire1.write(0xFE);Wire1.write(0xFF);Wire1.endTransmission();
   bootStage="uart-init";amp.begin(115200,SERIAL_8N1,44,43,true);
-  bootStage="lv-init";lv_init();bootStage="lv-display";auto*d=lv_display_create(240,240);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,drawBuffer,nullptr,sizeof drawBuffer,LV_DISPLAY_RENDER_MODE_PARTIAL);
-  lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){lcd.pushImage(a->x1,a->y1,a->x2-a->x1+1,a->y2-a->y1+1,reinterpret_cast<lgfx::rgb565_t*>(p));flushCount++;lv_display_flush_ready(display);});
+  bootStage="lv-init";lv_init();bootStage="lv-display";auto*d=lv_display_create(240,240);dispForFlush=d;lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,drawBufferA,CROWPANEL_SYNC_DISPLAY?nullptr:drawBufferB,sizeof drawBufferA,LV_DISPLAY_RENDER_MODE_PARTIAL);
+  configASSERT(esp_ptr_dma_capable(drawBufferA)&&esp_ptr_dma_capable(drawBufferB));
+  lv_display_set_flush_wait_cb(d,finishFlush);
+  lv_display_set_flush_cb(d,[](lv_display_t*display,const lv_area_t*a,uint8_t*p){
+    finishFlush(display);
+    const uint32_t w=a->x2-a->x1+1,h=a->y2-a->y1+1;
+    transferStarted=micros();transferPixels+=w*h;
+    lcd.startWrite();
+    if(CROWPANEL_SYNC_DISPLAY)lcd.pushImage(a->x1,a->y1,w,h,reinterpret_cast<lgfx::rgb565_t*>(p));
+    else lcd.pushImageDMA(a->x1,a->y1,w,h,reinterpret_cast<lgfx::rgb565_t*>(p));
+    transferPending=true;flushCount++;
+    if(CROWPANEL_SYNC_DISPLAY)finishFlush(display);
+  });
   // Draw only after setup's blocking hardware delays, so the entire fade is
   // driven by the non-blocking main loop rather than skipped during startup.
   bootStage="splash";
@@ -278,9 +309,10 @@ void loop(){
   auto event=button.update(encoderPressed,now);if(event!=cp::ButtonEvent::None){touchBlockedUntil=now+450;bool asleep=model.screen==0;activity();if(!asleep){if(model.screen==4){if(event==cp::ButtonEvent::Hold){model.edit=false;model.screen=1;dirty=true;}else model.edit=!model.edit;saveLater();}else if(model.screen==5){model.screen=1;model.edit=false;dirty=true;}else if(model.screen==3){if(event==cp::ButtonEvent::Single&&model.sourceSelection>=0)setHam(1,model.sourceSelection);else if(event==cp::ButtonEvent::Hold){model.screen=1;dirty=true;}}else if(event==cp::ButtonEvent::Single)media("play_pause");else if(event==cp::ButtonEvent::Double)media("next");else if(event==cp::ButtonEvent::Hold)media("previous");}}
   if(!model.playing&&model.settings.idleSeconds&&model.screen!=0&&now-model.activeAt>uint32_t(model.settings.idleSeconds)*1000){model.screen=0;model.edit=false;dirty=true;}
   if(settingsDirty&&now-settingsAt>2000){prefs.putBytes("settings",&model.settings,sizeof model.settings);prefs.putUChar("version",2);settingsDirty=false;}lighting(millis());
-  const uint32_t renderInterval=model.volumeOverlay?180:60;
+  const uint32_t renderInterval=model.volumeOverlay?33:60;
   if(splashActive&&uint32_t(now-splashShownAt)>=cp::splashDurationMs){splashActive=false;panelRevealing=true;panelRevealAt=now;dirty=true;}
-  if(!splashActive){if((dirty&&now-lastRender>renderInterval)||now-lastRender>=1000){bootStage="render";cp::render(model,now);lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();}bootStage="running";
+  if(!splashActive){if((dirty&&now-lastRender>renderInterval)||now-lastRender>=1000){bootStage="render";const uint32_t started=micros();cp::render(model,now);const uint32_t elapsed=micros()-started;
+      renderUs+=elapsed;renderMaxUs=std::max(uint32_t(renderMaxUs),elapsed);renderCount++;lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();if(transferPending&&!lcd.dmaBusy())finishFlush(dispForFlush);}bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
 

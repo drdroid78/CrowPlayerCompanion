@@ -1,37 +1,102 @@
 // Copyright (c) 2026 DrDroid78. Author: DrDroid78.
 #include "panel_ui.h"
 #include <math.h>
+#include <vector>
 namespace cp {
-const Theme themes[8]={{"Tornado Red",0xC81A26},{"Lapiz Blue",0x1F5FA8},{"Reflex Silver",0xC8C8C6},{"Indium Grey",0x8A8D90},{"Urano Grey",0x5B5D60},{"Atlantic Blue",0x0F3D68},{"Pure White",0xF5F5F5},{"Škoda Green",0x4BA82E}};
-static lv_obj_t*root;static uint32_t accent;
-static lv_color_t col(uint32_t x){return lv_color_hex(x);}
+const Theme themes[THEME_COUNT]={{"Tornado Red",0xC81A26},{"Lapiz Blue",0x1F5FA8},{"Reflex Silver",0xC8C8C6},{"Indium Grey",0x8A8D90},{"Urano Grey",0x5B5D60},{"Atlantic Blue",0x0F3D68},{"Pure White",0xF5F5F5},{"Škoda Green",0x4BA82E},{"Godwit Light",0x3D7B31}};
+static lv_obj_t*root;static uint32_t accent;static bool lightTheme=false;
+enum class Kind { Box, Label, Arc, Line, Image, Ramp };
+struct Node {lv_obj_t* obj;Kind kind;};
+static std::vector<Node> nodes;
+static size_t cursor=0;static bool freshObject=false;
+static int activeScreen=-1,activeTheme=-1;static bool activeOverlay=false;
+static uint32_t allocations=0;
+uint32_t uiAllocations(){return allocations;}
+static void trim(size_t from){while(nodes.size()>from){lv_obj_delete(nodes.back().obj);nodes.pop_back();}}
+void resetUI(){trim(0);activeScreen=-1;activeTheme=-1;}
+static lv_obj_t* object(Kind kind){
+  freshObject=false;
+  if(cursor<nodes.size()&&nodes[cursor].kind!=kind)trim(cursor);
+  if(cursor==nodes.size()){
+    lv_obj_t* o=nullptr;
+    switch(kind){case Kind::Label:o=lv_label_create(root);break;case Kind::Arc:o=lv_arc_create(root);break;case Kind::Line:o=lv_line_create(root);break;case Kind::Image:o=lv_image_create(root);break;default:o=lv_obj_create(root);break;}
+    if(kind!=Kind::Label&&kind!=Kind::Image)lv_obj_remove_style_all(o);
+    lv_obj_remove_flag(o,LV_OBJ_FLAG_SCROLLABLE);
+    nodes.push_back({o,kind});allocations++;freshObject=true;
+  }
+  return nodes[cursor++].obj;
+}
+static const lv_font_t* fontFor(const lv_font_t*f){
+  if(!lightTheme)return f;
+  if(f==&cp_font_10)return &cp_inter_10;
+  if(f==&cp_font_14)return &cp_inter_14;
+  if(f==&cp_font_16)return &cp_inter_16;
+  if(f==&cp_font_18)return &cp_inter_18;
+  if(f==&cp_font_24)return &cp_inter_24;
+  if(f==&cp_font_28)return &cp_inter_28;
+  if(f==&cp_font_44)return &cp_inter_44;
+  if(f==&cp_font_bold_18)return &cp_inter_semibold_18;
+  return f;
+}
+static void text(lv_obj_t*o,const char*s){if(strcmp(lv_label_get_text(o),s))lv_label_set_text(o,s);}
+
+static lv_color_t col(uint32_t x){if(lightTheme){switch(x){
+case 0x000000:x=0xFFFFFF;break;
+case 0xF5F5F5:case 0xC4F4FF:x=0x1A1A1A;break;
+case 0x252830:case 0x252C35:case 0x35404A:case 0x303743:case 0x41454D:case 0x464950:x=0xCACACA;break;
+case 0xA5A9AF:case 0x9399A2:case 0xAEB4BD:case 0xA0A5AD:case 0xB8C0CA:case 0xB8CBD3:case 0xD0D2D5:x=0x4A4A4A;break;
+}}return lv_color_hex(x);}
 static lv_image_dsc_t coverImage;
-static void cover(const Model&m){if(!m.artworkPresent||!m.artwork)return;coverImage={};coverImage.header.magic=LV_IMAGE_HEADER_MAGIC;coverImage.header.cf=LV_COLOR_FORMAT_RGB565;coverImage.header.w=240;coverImage.header.h=240;coverImage.header.stride=240*2;coverImage.data_size=240*240*2;coverImage.data=m.artwork;auto*img=lv_image_create(root);lv_image_set_src(img,&coverImage);lv_image_set_scale(img,256);lv_obj_set_pos(img,0,0);}
+static void cover(const Model&m){if(!m.artworkPresent||!m.artwork)return;coverImage={};coverImage.header.magic=LV_IMAGE_HEADER_MAGIC;coverImage.header.cf=LV_COLOR_FORMAT_RGB565;coverImage.header.w=240;coverImage.header.h=240;coverImage.header.stride=240*2;coverImage.data_size=240*240*2;coverImage.data=m.artwork;auto*img=object(Kind::Image);if(uintptr_t(lv_obj_get_user_data(img))!=uintptr_t(m.artworkRevision)+1){lv_image_set_src(img,&coverImage);lv_obj_invalidate(img);lv_obj_set_user_data(img,reinterpret_cast<void*>(uintptr_t(m.artworkRevision)+1));}lv_image_set_scale(img,256);lv_obj_set_pos(img,0,0);}
 static lv_obj_t* label(const char*s,int x,int y,int w,const lv_font_t*f=&cp_font_14,uint32_t c=0xF5F5F5){
-  auto*l=lv_label_create(root);lv_obj_set_size(l,w,f->line_height);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
+  auto*l=object(Kind::Label);lv_obj_set_size(l,w,fontFor(f)->line_height);lv_obj_set_pos(l,x,y);f=fontFor(f);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);text(l,s);return l;
 }
 static lv_obj_t* leftLabel(const char*s,int x,int y,int w,const lv_font_t*f,uint32_t c){
-  auto*l=lv_label_create(root);lv_obj_set_size(l,w,f->line_height);lv_obj_set_pos(l,x,y);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_LEFT,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);lv_label_set_text(l,s);return l;
+  auto*l=object(Kind::Label);lv_obj_set_size(l,w,fontFor(f)->line_height);lv_obj_set_pos(l,x,y);f=fontFor(f);lv_obj_set_style_text_font(l,f,0);lv_obj_set_style_text_color(l,col(c),0);lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_LEFT,0);lv_label_set_long_mode(l,LV_LABEL_LONG_DOT);text(l,s);return l;
 }
-static void disc(int x,int y,int r,uint32_t c){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-r,y-r);lv_obj_set_size(o,2*r,2*r);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_color(o,col(c),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);}
+static void disc(int x,int y,int r,uint32_t c){auto*o=object(Kind::Box);lv_obj_set_pos(o,x-r,y-r);lv_obj_set_size(o,2*r,2*r);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_color(o,col(c),0);lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);}
 static void ring(int x,int y,int r,int start,int end,uint32_t c,int width){
-  auto*a=lv_arc_create(root);lv_obj_remove_style_all(a);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);lv_arc_set_bg_angles(a,start,end);lv_obj_set_style_arc_width(a,width,LV_PART_MAIN);lv_obj_set_style_arc_color(a,col(c),LV_PART_MAIN);lv_obj_set_style_arc_rounded(a,true,LV_PART_MAIN);lv_obj_set_style_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);lv_obj_remove_flag(a,LV_OBJ_FLAG_CLICKABLE);
+  auto*a=object(Kind::Arc);lv_obj_set_pos(a,x-r,y-r);lv_obj_set_size(a,r*2,r*2);lv_arc_set_bg_angles(a,start,end);lv_obj_set_style_arc_width(a,width,LV_PART_MAIN);lv_obj_set_style_arc_color(a,col(c),LV_PART_MAIN);lv_obj_set_style_arc_rounded(a,true,LV_PART_MAIN);lv_obj_set_style_arc_opa(a,LV_OPA_TRANSP,LV_PART_INDICATOR);lv_obj_remove_flag(a,LV_OBJ_FLAG_CLICKABLE);
 }
 static lv_point_precise_t iconLines[192][2];static uint8_t iconLineCount=0;
-static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){if(iconLineCount>=192)return;auto&pts=iconLines[iconLineCount++];pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};auto*l=lv_line_create(root);lv_line_set_points(l,pts,2);lv_obj_set_style_line_color(l,col(color),0);lv_obj_set_style_line_width(l,width,0);lv_obj_set_style_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);}
+static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2){
+  if(iconLineCount>=192)return;auto&pts=iconLines[iconLineCount++];
+  const bool moved=pts[0].x!=x1||pts[0].y!=y1||pts[1].x!=x2||pts[1].y!=y2;
+  auto*l=object(Kind::Line);
+  if(moved||freshObject){pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};lv_line_set_points(l,pts,2);}
+  lv_obj_set_style_line_color(l,col(color),0);lv_obj_set_style_line_width(l,width,0);lv_obj_set_style_line_rounded(l,true,0);lv_obj_remove_flag(l,LV_OBJ_FLAG_CLICKABLE);
+}
+static int rampPercent=-1;
+static lv_point_precise_t rampPoint(float angle,float r){const float a=angle*3.14159265f/180;return {lv_value_precise_t(lroundf(120+r*sinf(a))),lv_value_precise_t(lroundf(120-r*cosf(a)))};}
+static void rampTriangle(lv_layer_t*layer,lv_point_precise_t a,lv_point_precise_t b,lv_point_precise_t c,uint32_t color){
+  lv_draw_triangle_dsc_t d;lv_draw_triangle_dsc_init(&d);d.p[0]=a;d.p[1]=b;d.p[2]=c;d.bg_color=lv_color_hex(color);lv_draw_triangle(layer,&d);
+}
+// Geometry adapted from TrailCurrentGodwit face.c (MIT); see third-party notice.
+static void drawRamp(lv_event_t*e){
+  auto*layer=lv_event_get_layer(e);const float fill=-135+270*rampPercent/100.0f;
+  for(float a=-135;a<135;a+=3){float b=std::min(a+3,135.0f);const float cuts[]={a,(fill>a&&fill<b)?fill:b,b};
+    for(int k=0;k<2;k++){float x=cuts[k],y=cuts[k+1];if(y-x<0.01f)continue;
+      float wx=2+12*(x+135)/270,wy=2+12*(y+135)/270,y2=std::min(y+0.4f,135.0f);
+      uint32_t c=(x+y)/2<fill?accent:0xCACACA;
+      auto a1=rampPoint(x,114),a2=rampPoint(y2,114),a3=rampPoint(y2,114-wy),a4=rampPoint(x,114-wx);
+      rampTriangle(layer,a1,a2,a3,c);rampTriangle(layer,a1,a3,a4,c);
+    }
+  }
+}
 static void volumeRing(int percent,uint32_t color){
   percent=clamp(percent,0,100);
+  if(lightTheme){auto*o=object(Kind::Ramp);lv_obj_set_pos(o,0,0);lv_obj_set_size(o,240,240);if(!lv_obj_get_user_data(o)){lv_obj_set_user_data(o,reinterpret_cast<void*>(1));lv_obj_add_event_cb(o,drawRamp,LV_EVENT_DRAW_MAIN,nullptr);lv_obj_invalidate(o);}if(rampPercent!=percent){rampPercent=percent;lv_obj_invalidate(o);}return;}
   constexpr int start=135,sweep=270,radius=104,width=7;
   ring(120,120,radius,start,start+sweep,0x252C35,width);
   if(percent>0)ring(120,120,radius,start,start+std::max(2,percent*sweep/100),color,width);
 }
-static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(color),0);return o;}
-static void selectedRow(int y){auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,14,y-18);lv_obj_set_size(o,212,36);lv_obj_set_style_radius(o,7,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);}
+static lv_obj_t* outlineCircle(int x,int y,int d,uint32_t color){auto*o=object(Kind::Box);lv_obj_set_pos(o,x-d/2,y-d/2);lv_obj_set_size(o,d,d);lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(color),0);return o;}
+static void selectedRow(int y){auto*o=object(Kind::Box);lv_obj_set_pos(o,14,y-18);lv_obj_set_size(o,212,36);lv_obj_set_style_radius(o,7,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);}
 static void selectedThemeRow(int y,int iconX,const char*name){
   const int left=8,textX=iconX+19,maxText=240-iconX-38;
-  const int width=std::min<int>(maxText,lv_text_get_width(name,strlen(name),&cp_font_18,0));
+  const int width=std::min<int>(maxText,lv_text_get_width(name,strlen(name),fontFor(&cp_font_18),0));
   const int right=std::min(232,textX+width+8);
-  auto*o=lv_obj_create(root);lv_obj_remove_style_all(o);lv_obj_set_pos(o,left,y-18);lv_obj_set_size(o,right-left,36);lv_obj_set_style_radius(o,7,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);
+  auto*o=object(Kind::Box);lv_obj_set_pos(o,left,y-18);lv_obj_set_size(o,right-left,36);lv_obj_set_style_radius(o,7,0);lv_obj_set_style_bg_opa(o,LV_OPA_TRANSP,0);lv_obj_set_style_border_width(o,1,0);lv_obj_set_style_border_color(o,col(accent),0);lv_obj_remove_flag(o,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);
 }
 static void drawSourceIcon(int source,int x,int y,uint32_t c=0xF5F5F5,float scale=1.0f){
   auto px=[&](int v){return int(lroundf(v*scale));};
@@ -68,7 +133,10 @@ static void settingIcon(int key,int x,int y,bool selected){uint32_t bg=0x000000;
   else{disc(x,y,4,ink);}
 }
 void render(const Model&m,uint32_t now){
-  if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);lv_obj_set_style_bg_color(root,col(0x000000),0);lv_obj_set_style_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lv_obj_clean(root);iconLineCount=0;accent=themes[m.settings.theme].rgb;
+  if(!root){root=lv_obj_create(nullptr);lv_obj_remove_style_all(root);lv_obj_set_size(root,240,240);lv_obj_set_style_bg_color(root,col(0x000000),0);lv_obj_set_style_bg_opa(root,LV_OPA_COVER,0);lv_obj_remove_flag(root,LV_OBJ_FLAG_SCROLLABLE);lv_screen_load(root);}lightTheme=m.settings.theme==8;
+  if(activeScreen!=m.screen||activeTheme!=m.settings.theme||activeOverlay!=m.volumeOverlay){trim(0);activeScreen=m.screen;activeTheme=m.settings.theme;activeOverlay=m.volumeOverlay;}
+  cursor=0;iconLineCount=0;accent=themes[m.settings.theme].rgb;
+  lv_obj_set_style_bg_color(root,col(0x000000),0);
   char b[160];bool ham=m.ham.online(now);
   if(m.screen==0){
     ring(120,120,103,135,405,0x252830,3);int minute=m.clock.minute();if(m.clock.epoch)ring(120,120,103,135,135+std::max(1,minute*270/1440),accent,4);
@@ -76,7 +144,7 @@ void render(const Model&m,uint32_t now){
     if(m.usbHostConnected)label("USB",40,170,160,&cp_font_14,accent);
   }else if(m.screen==1){
     cover(m);
-    auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);lv_obj_set_style_bg_color(shade,col(0x000000),0);lv_obj_set_style_bg_opa(shade,210,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
+    auto*shade=object(Kind::Box);lv_obj_set_pos(shade,0,128);lv_obj_set_size(shade,240,112);lv_obj_set_style_bg_color(shade,col(0x000000),0);lv_obj_set_style_bg_opa(shade,210,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
     if(!m.artworkPresent){ring(120,89,46,0,359,accent,2);label("♫",83,56,74,&cp_font_44,accent);}
     if(m.ham.source>=0)drawSourceIcon(m.ham.source,48,36,0xF5F5F5,0.65f);
     heart(m.liked&&m.likeKnown);if(m.likePending)label("…",188,27,30,&cp_font_14,accent);
@@ -123,7 +191,7 @@ void render(const Model&m,uint32_t now){
   }else{
     label("Тема",40,15,160,&cp_font_bold_18);
     for(int offset=-2;offset<=2;offset++){
-      int index=(int(m.settings.theme)+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
+      int index=(int(m.settings.theme)+offset+THEME_COUNT)%THEME_COUNT,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
       if(selected)selectedThemeRow(y,iconX,themes[index].name);
       disc(iconX,y,selected?8:7,themes[index].rgb);
@@ -131,8 +199,9 @@ void render(const Model&m,uint32_t now){
     }
   }
   if(m.screen==0)nav(m.screen);
+  const size_t baseEnd=cursor;
   if(m.volumeOverlay){
-    auto*shade=lv_obj_create(root);lv_obj_remove_style_all(shade);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x000000),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
+    auto*shade=object(Kind::Box);lv_obj_set_pos(shade,0,0);lv_obj_set_size(shade,240,240);lv_obj_set_style_bg_color(shade,col(0x000000),0);lv_obj_set_style_bg_opa(shade,LV_OPA_COVER,0);lv_obj_remove_flag(shade,LV_OBJ_FLAG_SCROLLABLE);
     char value[16];int current=m.volumeOverlayValue;
     volumeRing(m.volumeOverlayTick*100/51,accent);
     if(m.settings.tabletVolume){
@@ -142,11 +211,12 @@ void render(const Model&m,uint32_t now){
     }
     else if(current>=(m.volumeOverlaySub?-60:0)){
       snprintf(value,sizeof value,"%d",current);
-      label(m.volumeOverlaySub?"Саб":"Громкость",35,77,170,&cp_font_14,0xB8CBD3);
-      label(value,30,94,180,&cp_font_44,0xC4F4FF);
-      if(!m.volumeOverlaySub)label("%",80,150,80,&cp_font_16,0xB8CBD3);
+      label(m.volumeOverlaySub?"Саб":"Громкость",35,lightTheme?53:77,170,&cp_font_14,0xB8CBD3);
+      label(value,30,lightTheme?83:94,180,lightTheme?&cp_inter_64:&cp_font_44,0xC4F4FF);
+      if(lightTheme)label(m.volumeOverlaySub?"Усилитель":"Усилитель",35,158,170,&cp_font_16,0xB8CBD3);else if(!m.volumeOverlaySub)label("%",80,150,80,&cp_font_16,0xB8CBD3);
     }else{label(m.volumeOverlaySub?"SUBWOOFER":"VOLUME",35,77,170,&cp_font_14,0xB8CBD3);label("--",30,94,180,&cp_font_44,0xC4F4FF);}
   }
+  for(size_t i=0;i<baseEnd;i++){if(m.volumeOverlay)lv_obj_add_flag(nodes[i].obj,LV_OBJ_FLAG_HIDDEN);else lv_obj_remove_flag(nodes[i].obj,LV_OBJ_FLAG_HIDDEN);}
+  trim(cursor);
 }
 }
-

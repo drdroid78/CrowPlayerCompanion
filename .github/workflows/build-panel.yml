@@ -26,8 +26,10 @@ jobs:
         run: |
           git clone --depth 1 --branch v9.1.0 https://github.com/lvgl/lvgl.git build/lvgl
           cmake -S firmware/preview -B build/preview-app -DLVGL_DIR="$PWD/build/lvgl" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/preview-app --target panel_preview -j4
+          cmake --build build/preview-app --target panel_preview panel_reference -j4
+          ./build/preview-app/panel_reference build/reference
           ./build/preview-app/panel_preview build/preview
+          python scripts/panel-check-preview.py
           python -m pip install Pillow==11.3.0
           python scripts/panel-preview.py build/preview
       - uses: arduino/setup-arduino-cli@v2
@@ -64,5 +66,6 @@ jobs:
           path: |
             build/panel
             build/preview/*.png
+            build/reference/*.ppm
           if-no-files-found: error
 

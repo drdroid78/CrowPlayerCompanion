@@ -6,12 +6,13 @@
 #include <math.h>
 #include <algorithm>
 namespace cp {
+constexpr int THEME_COUNT=9;
 template<class T> T clamp(T v,T lo,T hi){return std::min(hi,std::max(lo,v));}
 struct Settings {
   uint8_t theme=7, dayHour=7, nightHour=22, dayLight=80, nightLight=18, dayLed=35, nightLed=6;
   uint16_t idleSeconds=30;
   bool tabletVolume=false;
-  bool valid() const {return theme<8 && dayHour<24 && nightHour<24 && dayLight<=100 && nightLight<=100 && dayLed<=100 && nightLed<=100 && idleSeconds<=600;}
+  bool valid() const {return theme<THEME_COUNT && dayHour<24 && nightHour<24 && dayLight<=100 && nightLight<=100 && dayLed<=100 && nightLed<=100 && idleSeconds<=600;}
 };
 struct Clock {
   uint64_t epoch=0; uint32_t at=0; int offset=180;
@@ -142,6 +143,7 @@ struct Model {
   int screen=1,setting=0,sourceSelection=-1;bool edit=false,subSelected=false,usb=false,usbHostConnected=false,playing=false,liked=false,likeKnown=false,likeAvailable=false,likePending=false,requestPending=false;
   bool volumeOverlay=false,volumeOverlaySub=false;uint32_t volumeOverlayUntil=0;
   int8_t volumeOverlayDirection=0;uint8_t volumeOverlayAmount=0,volumeOverlayTick=26;int16_t volumeOverlayValue=-1;
+  uint32_t artworkRevision=0;
   bool artworkPresent=false;uint8_t* artwork=nullptr;
   char title[192]="Ожидание планшета",artist[128]="Подключите USB";
   uint32_t position=0,duration=0,positionAt=0,lastUsb=0,activeAt=0;

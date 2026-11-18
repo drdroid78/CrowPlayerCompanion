@@ -29,6 +29,7 @@ int main(){
   {HamParser p;auto valid=packet(1,4,0x66);p.feed(0,0);p.feed(0xAA,1);p.feed(0xAA,2);p.feed(0x77,3);p.feed(0xFF,4);bool ready=false;for(size_t i=0;i<valid.size;i++)ready=p.feed(valid.bytes[i],10+i);assert(ready);
    valid.bytes[6]^=1;for(size_t i=0;i<valid.size;i++)assert(!p.feed(valid.bytes[i],30+i));p.feed(0xAA,50);assert(!p.feed(0x77,100));}
   {LineBuffer b;for(int i=0;i<3000;i++)assert(!b.feed('x'));assert(!b.feed('\n'));b.feed('{');b.feed('}');assert(b.feed('\n')&&!strcmp(b.data,"{}"));}
+  {Settings s;s.theme=8;assert(s.valid());s.theme=9;assert(!s.valid());}
   std::cout<<"Panel core: encoder, button, clock, schedule, UART, framing passed\n";
 }
 

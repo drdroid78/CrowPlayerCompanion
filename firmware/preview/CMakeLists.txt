@@ -7,3 +7,6 @@ add_subdirectory(${LVGL_DIR} lvgl-build)
 file(GLOB FONTS "../CrowPlayer/src/fonts/*.c")
 add_executable(panel_preview main.cpp ../CrowPlayer/src/panel_ui.cpp ${FONTS})
 target_link_libraries(panel_preview PRIVATE lvgl::lvgl m)
+
+add_executable(panel_reference ../tests/preview_reference.cpp ../tests/panel_ui_reference.cpp ${FONTS})
+target_link_libraries(panel_reference PRIVATE lvgl::lvgl m)
