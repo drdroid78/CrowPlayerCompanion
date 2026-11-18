@@ -74,12 +74,19 @@ static void rampTriangle(lv_layer_t*layer,lv_point_precise_t a,lv_point_precise_
 // Geometry adapted from TrailCurrentGodwit face.c (MIT); see third-party notice.
 static void drawRamp(lv_event_t*e){
   auto*layer=lv_event_get_layer(e);const float fill=-135+270*rampPercent/100.0f;
-  for(float a=-135;a<135;a+=3){float b=std::min(a+3,135.0f);const float cuts[]={a,(fill>a&&fill<b)?fill:b,b};
-    for(int k=0;k<2;k++){float x=cuts[k],y=cuts[k+1];if(y-x<0.01f)continue;
-      float wx=2+12*(x+135)/270,wy=2+12*(y+135)/270,y2=std::min(y+0.4f,135.0f);
-      uint32_t c=(x+y)/2<fill?accent:0xCACACA;
-      auto a1=rampPoint(x,114),a2=rampPoint(y2,114),a3=rampPoint(y2,114-wy),a4=rampPoint(x,114-wx);
-      rampTriangle(layer,a1,a2,a3,c);rampTriangle(layer,a1,a3,a4,c);
+  // Overlapping arc slices avoid the diagonal antialias seams of triangle pairs.
+  // Outer radius and 2..14 px width follow the upstream wedge geometry.
+  for(int pass=0;pass<2;pass++){
+    const float stop=pass?fill:135;
+    for(float a=-135;a<stop-0.01f;a+=3){
+      const float b=std::min(a+4.2f,stop),mid=(a+b)*0.5f;
+      lv_draw_arc_dsc_t d;lv_draw_arc_dsc_init(&d);
+      d.center.x=120;d.center.y=120;d.radius=114;
+      d.width=uint16_t(lroundf(2+12*(mid+135)/270));
+      d.start_angle=lv_value_precise_t(lroundf(fmodf(a-90+360,360)));
+      d.end_angle=lv_value_precise_t(lroundf(fmodf(b-90+360,360)));
+      d.color=lv_color_hex(pass?accent:0xCACACA);d.rounded=false;
+      lv_draw_arc(layer,&d);
     }
   }
 }
