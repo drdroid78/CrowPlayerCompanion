@@ -5,9 +5,10 @@
 #include <string>
 #include <stdexcept>
 static uint16_t pixels[240*240];
+static uint64_t writtenPixels=0;
 static uint16_t demoArtwork[240*240];
 alignas(LV_DRAW_BUF_ALIGN) static uint16_t buffer[240*24];
-static void flush(lv_display_t*d,const lv_area_t*a,uint8_t*data){auto*p=reinterpret_cast<uint16_t*>(data);for(int y=a->y1;y<=a->y2;y++)for(int x=a->x1;x<=a->x2;x++)pixels[y*240+x]=*p++;lv_display_flush_ready(d);}
+static void flush(lv_display_t*d,const lv_area_t*a,uint8_t*data){writtenPixels+=uint64_t(a->x2-a->x1+1)*(a->y2-a->y1+1);auto*p=reinterpret_cast<uint16_t*>(data);for(int y=a->y1;y<=a->y2;y++)for(int x=a->x1;x<=a->x2;x++)pixels[y*240+x]=*p++;lv_display_flush_ready(d);}
 static void save(const std::string&name){lv_refr_now(nullptr);std::ofstream out(name,std::ios::binary);out<<"P6\n240 240\n255\n";for(auto c:pixels){char rgb[]={char(((c>>11)&31)*255/31),char(((c>>5)&63)*255/63),char((c&31)*255/31)};out.write(rgb,3);}}
 int main(int argc,char**argv){
   std::string dest=argc>1?argv[1]:"build/preview";std::filesystem::create_directories(dest);lv_init();auto*d=lv_display_create(240,240);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);lv_display_set_buffers(d,buffer,nullptr,sizeof buffer,LV_DISPLAY_RENDER_MODE_PARTIAL);lv_display_set_flush_cb(d,flush);
@@ -28,8 +29,10 @@ int main(int argc,char**argv){
     cp::render(m,now);lv_refr_now(nullptr);
     cp::render(m,now);lv_refr_now(nullptr);
     uint32_t allocations=cp::uiAllocations();
+    const uint64_t beforePixels=writtenPixels;
     cp::render(m,now);lv_refr_now(nullptr);
     if(cp::uiAllocations()!=allocations)throw std::runtime_error("Steady frame allocated UI objects");
+    if(writtenPixels!=beforePixels)throw std::runtime_error("Unchanged frame flushed pixels");
     std::vector<uint16_t> retained(pixels,pixels+240*240);
     cp::resetUI();cp::render(m,now);lv_refr_now(nullptr);
     if(!std::equal(retained.begin(),retained.end(),pixels))throw std::runtime_error("Retained/fresh render mismatch");
@@ -57,5 +60,14 @@ int main(int argc,char**argv){
       checkTransition();
     }
   }
+
+  m=cp::Model();m.screen=1;m.settings.theme=8;m.artwork=(uint8_t*)demoArtwork;m.artworkPresent=true;m.ham.source=0;
+  cp::render(m,now);lv_refr_now(nullptr);cp::render(m,now);lv_refr_now(nullptr);
+  uint64_t stillPixels=writtenPixels;cp::render(m,now);lv_refr_now(nullptr);
+  if(writtenPixels!=stillPixels)throw std::runtime_error("Unchanged artwork frame flushed pixels");
+  save(dest+"/light-player-artwork.ppm");
+  demoArtwork[120*240+120]=0xFFFF;m.artworkRevision++;
+  cp::render(m,now);lv_refr_now(nullptr);
+  if(writtenPixels==stillPixels)throw std::runtime_error("Changed artwork did not redraw");
 
 }

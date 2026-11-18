@@ -1,6 +1,7 @@
 // Copyright (c) 2026 DrDroid78. Author: DrDroid78.
 // Native USB companion + inverted 1.8 V Hellion UART (external level shifter).
 #include <Arduino.h>
+#include <atomic>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
 #include <LovyanGFX.hpp>
@@ -51,8 +52,8 @@ alignas(LV_DRAW_BUF_ALIGN) static uint16_t drawBufferB[240*40];
 #define CROWPANEL_SYNC_DISPLAY 0
 #endif
 // Totals are diagnostic observations, not a claimed FPS benchmark.
-static volatile uint32_t renderUs=0,renderMaxUs=0,renderCount=0;
-static volatile uint32_t transferUs=0,transferMaxUs=0,transferPixels=0;
+static std::atomic<uint32_t> renderUs=0,renderMaxUs=0,renderCount=0;
+static std::atomic<uint32_t> transferUs=0,transferMaxUs=0,transferPixels=0;
 static lv_display_t*dispForFlush=nullptr;
 static uint32_t transferStarted=0;static bool transferPending=false;
 static void finishFlush(lv_display_t*display){
@@ -315,4 +316,3 @@ void loop(){
       renderUs+=elapsed;renderMaxUs=std::max(uint32_t(renderMaxUs),elapsed);renderCount++;lastRender=now;dirty=false;}bootStage="flush";lv_timer_handler();if(transferPending&&!lcd.dmaBusy())finishFlush(dispForFlush);}bootStage="running";
   if(strlen(CROWPLAYER_WIFI_SSID)&&WiFi.status()==WL_CONNECTED){if(!otaReady){ArduinoOTA.setHostname("crowpanel-skoda");ArduinoOTA.begin();otaReady=true;}ArduinoOTA.handle();}delay(2);
 }
-
