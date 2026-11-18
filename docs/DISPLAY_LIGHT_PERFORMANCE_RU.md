@@ -32,3 +32,5 @@ https://github.com/trailcurrentoss/TrailCurrentGodwit/blob/1a1a14af14de6de28ecf0
 Copyright (c) 2026 TrailCurrent Open Source, MIT; полный текст в firmware/assets/fonts/LICENSE-TrailCurrent.txt.
 Inter: Copyright (c) 2016 The Inter Project Authors, SIL OFL 1.1, LICENSE-inter.txt.
 Оригинальные изменения CrowPanel: DrDroid78.
+
+Дополнено: текст, стили, флаги и углы дуг назначаются только при изменении. Проверки подтверждают нулевую отправку пикселей на неизменившемся экране и перерисовку при новой ревизии обложки. Это host-тесты LVGL, не измерение FPS панели.
