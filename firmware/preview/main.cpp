@@ -40,4 +40,22 @@ int main(int argc,char**argv){
   m.volumeOverlay=false;cp::render(m,now);save(dest+"/light-player-after-overlay.ppm");
   m.settings.theme=1;cp::render(m,now);save(dest+"/dark-player-after-light.ppm");
 
+  auto checkTransition=[&](){
+    cp::render(m,now);lv_refr_now(nullptr);
+    std::vector<uint16_t> expected(pixels,pixels+240*240);
+    cp::resetUI();cp::render(m,now);lv_refr_now(nullptr);
+    if(!std::equal(expected.begin(),expected.end(),pixels))throw std::runtime_error("Transition retained/fresh mismatch");
+  };
+  for(int theme : {0,8}){
+    m=cp::Model();m.settings.theme=theme;m.screen=4;
+    for(int key=0;key<8;key++){m.setting=key;checkTransition();}
+    m.screen=1;
+    for(int n=0;n<6;n++){
+      m.playing=n%2;m.likePending=n%3==0;m.duration=n%2?214000:0;
+      m.volumeOverlay=n>=3;m.settings.tabletVolume=n%2;
+      m.volumeOverlayTick=n*10;m.volumeOverlayValue=n*10;
+      checkTransition();
+    }
+  }
+
 }
