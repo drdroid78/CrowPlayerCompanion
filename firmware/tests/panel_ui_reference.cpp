@@ -1,8 +1,9 @@
+// Reference renderer, with only the ninth menu entry normalized for comparison.
 // Copyright (c) 2026 DrDroid78. Author: DrDroid78.
 #include "../CrowPlayer/src/panel_ui.h"
 #include <math.h>
 namespace cp {
-const Theme themes[THEME_COUNT]={{"Tornado Red",0xC81A26},{"Lapiz Blue",0x1F5FA8},{"Reflex Silver",0xC8C8C6},{"Indium Grey",0x8A8D90},{"Urano Grey",0x5B5D60},{"Atlantic Blue",0x0F3D68},{"Pure White",0xF5F5F5},{"Škoda Green",0x4BA82E}};
+const Theme themes[THEME_COUNT]={{"Tornado Red",0xC81A26},{"Lapiz Blue",0x1F5FA8},{"Reflex Silver",0xC8C8C6},{"Indium Grey",0x8A8D90},{"Urano Grey",0x5B5D60},{"Atlantic Blue",0x0F3D68},{"Pure White",0xF5F5F5},{"Škoda Green",0x4BA82E},{"Godwit Light",0x3D7B31}};
 static lv_obj_t*root;static uint32_t accent;
 static lv_color_t col(uint32_t x){return lv_color_hex(x);}
 static lv_image_dsc_t coverImage;
@@ -123,7 +124,7 @@ void render(const Model&m,uint32_t now){
   }else{
     label("Тема",40,15,160,&cp_font_bold_18);
     for(int offset=-2;offset<=2;offset++){
-      int index=(int(m.settings.theme)+offset+8)%8,y=wheelY(offset),iconX=wheelIconX(offset);
+      int index=(int(m.settings.theme)+offset+THEME_COUNT)%THEME_COUNT,y=wheelY(offset),iconX=wheelIconX(offset);
       bool selected=offset==0;uint32_t textColor=selected?0xF5F5F5:offset==0?0xC1C5CC:0xA0A5AD;
       if(selected)selectedThemeRow(y,iconX,themes[index].name);
       disc(iconX,y,selected?8:7,themes[index].rgb);
@@ -149,4 +150,3 @@ void render(const Model&m,uint32_t now){
   }
 }
 }
-

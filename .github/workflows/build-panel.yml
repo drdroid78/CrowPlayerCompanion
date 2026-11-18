@@ -66,6 +66,6 @@ jobs:
           path: |
             build/panel
             build/preview/*.png
+            build/preview/*.ppm
             build/reference/*.ppm
           if-no-files-found: error
-
