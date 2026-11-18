@@ -20,6 +20,8 @@ jobs:
           mkdir -p build
           g++ -std=c++17 -Wall -Wextra -fsanitize=address,undefined -g firmware/tests/core_test.cpp -o build/panel_tests
           ./build/panel_tests
+          g++ -std=c++17 -Wall -Wextra -fsanitize=address,undefined -g firmware/tests/ramp_test.cpp -o build/ramp_tests
+          ./build/ramp_tests
       - name: Generate Cyrillic fonts
         run: bash scripts/panel-assets.sh
       - name: Render actual firmware UI

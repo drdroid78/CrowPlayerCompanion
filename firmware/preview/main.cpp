@@ -70,4 +70,14 @@ int main(int argc,char**argv){
   cp::render(m,now);lv_refr_now(nullptr);
   if(writtenPixels==stillPixels)throw std::runtime_error("Changed artwork did not redraw");
 
+  m=cp::Model();m.settings.theme=8;m.screen=1;m.volumeOverlay=true;
+  m.settings.tabletVolume=false;
+  for(int tick : {0,1,13,26,38,50,51}){
+    m.volumeOverlayTick=tick;m.volumeOverlayValue=(tick*60+25)/51;
+    cp::render(m,now);save(dest+"/smooth-volume-"+std::to_string(tick)+".ppm");
+    const uint64_t after=writtenPixels;
+    cp::render(m,now);lv_refr_now(nullptr);
+    if(writtenPixels!=after)throw std::runtime_error("Unchanged volume image redrew");
+  }
+
 }

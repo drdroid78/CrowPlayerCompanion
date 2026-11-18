@@ -1,5 +1,6 @@
 // Copyright (c) 2026 DrDroid78. Author: DrDroid78.
 #include "panel_ui.h"
+#include "panel_ramp.h"
 #include <math.h>
 #include <vector>
 #include <string>
@@ -47,8 +48,8 @@ static lv_obj_t* object(Kind kind){
   if(cursor<nodes.size()&&nodes[cursor].kind!=kind)trim(cursor);
   if(cursor==nodes.size()){
     lv_obj_t* o=nullptr;
-    switch(kind){case Kind::Label:o=lv_label_create(root);break;case Kind::Arc:o=lv_arc_create(root);break;case Kind::Line:o=lv_line_create(root);break;case Kind::Image:o=lv_image_create(root);break;default:o=lv_obj_create(root);break;}
-    if(kind!=Kind::Label&&kind!=Kind::Image)lv_obj_remove_style_all(o);
+    switch(kind){case Kind::Label:o=lv_label_create(root);break;case Kind::Arc:o=lv_arc_create(root);break;case Kind::Line:o=lv_line_create(root);break;case Kind::Ramp:case Kind::Image:o=lv_image_create(root);break;default:o=lv_obj_create(root);break;}
+    if(kind!=Kind::Label&&kind!=Kind::Image&&kind!=Kind::Ramp)lv_obj_remove_style_all(o);
     uiRemoveFlag(o,LV_OBJ_FLAG_SCROLLABLE);
     nodes.push_back({o,kind,{}});allocations++;freshObject=true;
   }
@@ -94,29 +95,27 @@ static void line(int x1,int y1,int x2,int y2,uint32_t color=0xF5F5F5,int width=2
   if(moved||freshObject||reinterpret_cast<lv_line_t*>(l)->point_array!=pts){pts[0]={lv_value_precise_t(x1),lv_value_precise_t(y1)};pts[1]={lv_value_precise_t(x2),lv_value_precise_t(y2)};lv_line_set_points(l,pts,2);}
   ui_line_color(l,col(color),0);ui_line_width(l,width,0);ui_line_rounded(l,true,0);uiRemoveFlag(l,LV_OBJ_FLAG_CLICKABLE);
 }
-static int rampPercent=-1;
-// Geometry adapted from TrailCurrentGodwit face.c (MIT); see third-party notice.
-static void drawRamp(lv_event_t*e){
-  auto*layer=lv_event_get_layer(e);const float fill=-135+270*rampPercent/100.0f;
-  // Overlapping arc slices avoid the diagonal antialias seams of triangle pairs.
-  // Outer radius and 2..14 px width follow the upstream wedge geometry.
-  for(int pass=0;pass<2;pass++){
-    const float stop=pass?fill:135;
-    for(float a=-135;a<stop-0.01f;a+=3){
-      const float b=std::min(a+4.2f,stop),mid=(a+b)*0.5f;
-      lv_draw_arc_dsc_t d;lv_draw_arc_dsc_init(&d);
-      d.center.x=120;d.center.y=120;d.radius=114;
-      d.width=uint16_t(lroundf(2+12*(mid+135)/270));
-      d.start_angle=lv_value_precise_t(lroundf(fmodf(a-90+360,360)));
-      d.end_angle=lv_value_precise_t(lroundf(fmodf(b-90+360,360)));
-      d.color=lv_color_hex(pass?accent:0xCACACA);d.rounded=false;
-      lv_draw_arc(layer,&d);
-    }
-  }
-}
+static smooth::Ramp volumeRaster;
+static lv_image_dsc_t volumeImage;
 static void volumeRing(int percent,uint32_t color){
   percent=clamp(percent,0,100);
-  if(lightTheme){auto*o=object(Kind::Ramp);lv_obj_set_pos(o,0,0);lv_obj_set_size(o,240,240);if(!lv_obj_get_user_data(o)){lv_obj_set_user_data(o,reinterpret_cast<void*>(1));lv_obj_add_event_cb(o,drawRamp,LV_EVENT_DRAW_MAIN,nullptr);lv_obj_invalidate(o);}if(rampPercent!=percent){rampPercent=percent;lv_obj_invalidate(o);}return;}
+  if(lightTheme){
+    const bool changed=volumeRaster.render(percent,color);
+    if(volumeRaster.valid()){
+      auto*o=object(Kind::Ramp);
+      if(freshObject){
+        volumeImage={};volumeImage.header.magic=LV_IMAGE_HEADER_MAGIC;
+        volumeImage.header.cf=LV_COLOR_FORMAT_RGB565;
+        volumeImage.header.w=240;volumeImage.header.h=240;volumeImage.header.stride=480;
+        volumeImage.data_size=240*240*2;
+        volumeImage.data=reinterpret_cast<const uint8_t*>(volumeRaster.data());
+        lv_image_set_src(o,&volumeImage);lv_obj_set_pos(o,0,0);
+      }
+      if(changed)lv_obj_invalidate(o);
+      return;
+    }
+    // Allocation failure keeps volume controls usable with a simple native arc.
+  }
   constexpr int start=135,sweep=270,radius=104,width=7;
   ring(120,120,radius,start,start+sweep,0x252C35,width);
   if(percent>0)ring(120,120,radius,start,start+std::max(2,percent*sweep/100),color,width);
